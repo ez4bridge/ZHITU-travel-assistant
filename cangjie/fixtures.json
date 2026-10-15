@@ -1,0 +1,396 @@
+[
+  {
+    "name": "valid",
+    "input": {
+      "budget_cents": 100000,
+      "total_cents": 20000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "外滩",
+              "identity": "poi1",
+              "start_min": 540,
+              "end_min": 600,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            },
+            {
+              "id": "b",
+              "name": "豫园",
+              "identity": "poi2",
+              "start_min": 630,
+              "end_min": 720,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [
+        {
+          "day_index": 0,
+          "from_id": "a",
+          "to_id": "b",
+          "duration_min": 20,
+          "available": true
+        }
+      ]
+    },
+    "expected_status": "passed",
+    "expected_errors": [],
+    "expected_warnings": []
+  },
+  {
+    "name": "budget",
+    "input": {
+      "budget_cents": 100000,
+      "total_cents": 100001,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "外滩",
+              "identity": "poi1",
+              "start_min": 540,
+              "end_min": 600,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            },
+            {
+              "id": "b",
+              "name": "豫园",
+              "identity": "poi2",
+              "start_min": 630,
+              "end_min": 720,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [
+        {
+          "day_index": 0,
+          "from_id": "a",
+          "to_id": "b",
+          "duration_min": 20,
+          "available": true
+        }
+      ]
+    },
+    "expected_status": "issues",
+    "expected_errors": [
+      "over_budget"
+    ],
+    "expected_warnings": []
+  },
+  {
+    "name": "overlap",
+    "input": {
+      "budget_cents": 100000,
+      "total_cents": 20000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "外滩",
+              "identity": "poi1",
+              "start_min": 540,
+              "end_min": 600,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            },
+            {
+              "id": "b",
+              "name": "豫园",
+              "identity": "poi2",
+              "start_min": 590,
+              "end_min": 720,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [
+        {
+          "day_index": 0,
+          "from_id": "a",
+          "to_id": "b",
+          "duration_min": 20,
+          "available": true
+        }
+      ]
+    },
+    "expected_status": "issues",
+    "expected_errors": [
+      "time_overlap",
+      "transfer_time"
+    ],
+    "expected_warnings": []
+  },
+  {
+    "name": "transfer",
+    "input": {
+      "budget_cents": 100000,
+      "total_cents": 20000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "外滩",
+              "identity": "poi1",
+              "start_min": 540,
+              "end_min": 600,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            },
+            {
+              "id": "b",
+              "name": "豫园",
+              "identity": "poi2",
+              "start_min": 630,
+              "end_min": 720,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [
+        {
+          "day_index": 0,
+          "from_id": "a",
+          "to_id": "b",
+          "duration_min": 31,
+          "available": true
+        }
+      ]
+    },
+    "expected_status": "issues",
+    "expected_errors": [
+      "transfer_time"
+    ],
+    "expected_warnings": []
+  },
+  {
+    "name": "duplicate",
+    "input": {
+      "budget_cents": 100000,
+      "total_cents": 20000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "外滩",
+              "identity": "poi1",
+              "start_min": 540,
+              "end_min": 600,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            },
+            {
+              "id": "b",
+              "name": "豫园",
+              "identity": "poi1",
+              "start_min": 630,
+              "end_min": 720,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [
+        {
+          "day_index": 0,
+          "from_id": "a",
+          "to_id": "b",
+          "duration_min": 20,
+          "available": true
+        }
+      ]
+    },
+    "expected_status": "issues",
+    "expected_errors": [],
+    "expected_warnings": [
+      "duplicate_stop"
+    ]
+  },
+  {
+    "name": "unknowns",
+    "input": {
+      "budget_cents": 100000,
+      "total_cents": 20000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "外滩",
+              "identity": "poi1",
+              "start_min": 540,
+              "end_min": 600,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            },
+            {
+              "id": "b",
+              "name": "豫园",
+              "identity": "poi2",
+              "start_min": 630,
+              "end_min": 720,
+              "poi_ok": false,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": []
+    },
+    "expected_status": "passed_with_unknowns",
+    "expected_errors": [],
+    "expected_warnings": []
+  },
+  {
+    "name": "duration",
+    "input": {
+      "budget_cents": 100000,
+      "total_cents": 20000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "外滩",
+              "identity": "poi1",
+              "start_min": 540,
+              "end_min": 530,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            },
+            {
+              "id": "b",
+              "name": "豫园",
+              "identity": "poi2",
+              "start_min": 630,
+              "end_min": 720,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [
+        {
+          "day_index": 0,
+          "from_id": "a",
+          "to_id": "b",
+          "duration_min": 20,
+          "available": true
+        }
+      ]
+    },
+    "expected_status": "issues",
+    "expected_errors": [
+      "invalid_duration"
+    ],
+    "expected_warnings": []
+  },
+  {
+    "name": "unicode_and_hotel_return",
+    "input": {
+      "budget_cents": 100000,
+      "total_cents": 20000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [
+        {
+          "code": "note",
+          "message": "上海+\"\\\n🏞",
+          "day_index": null,
+          "stop_id": null
+        }
+      ],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "外滩",
+              "identity": "poi1",
+              "start_min": 540,
+              "end_min": 600,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            },
+            {
+              "id": "b",
+              "name": "豫园",
+              "identity": "poi1",
+              "start_min": 630,
+              "end_min": 720,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": false
+            }
+          ]
+        }
+      ],
+      "legs": [
+        {
+          "day_index": 0,
+          "from_id": "a",
+          "to_id": "b",
+          "duration_min": 20,
+          "available": true
+        }
+      ]
+    },
+    "expected_status": "passed_with_unknowns",
+    "expected_errors": [],
+    "expected_warnings": []
+  }
+]

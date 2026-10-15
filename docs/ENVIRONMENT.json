@@ -1,0 +1,17 @@
+{
+  "tested_date": "2026-10-14",
+  "python": "3.11.7",
+  "node": "22.23.3",
+  "cangjie": "1.0.5",
+  "unit_tests": 24,
+  "native_golden_cases": 8,
+  "native_random_cases": 120,
+  "packages": {
+    "fastapi": "0.115.14",
+    "uvicorn": "0.34.3",
+    "openai": "1.109.1",
+    "langgraph": "0.6.11",
+    "pydantic": "2.11.10",
+    "httpx": "0.28.1"
+  }
+}

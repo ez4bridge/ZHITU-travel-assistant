@@ -1,0 +1,15 @@
+.venv/
+.tools/
+.runtime/
+.env
+.env.*
+!.env.example
+__pycache__/
+.pytest_cache/
+frontend/node_modules/
+frontend/dist/
+cangjie/bin/
+cangjie/.sdk/
+*.pyc
+*.log
+*.tsbuildinfo
