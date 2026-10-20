@@ -2,19 +2,19 @@
 
 核对当前源码：2026-10-20。此文约定小队如何对接；完整字段、长度、范围与默认值以 `backend/models.py` 为准，前端消费类型在 `frontend/src/types.ts`，目前没有自动代码生成。后端启动后可访问 `/docs` 查看请求模型；SSE 和部分直接返回 dict 的响应仍以本说明及实现为准，OpenAPI 不会自动表达全部流协议。
 
-最新增量：request.mode 默认 auto（仍兼容五种显式方式），路线 mode 只保存实际方式。新增区域真实选点、Expense.stop_id、地图营业参考字段、guide_mode/guide_decisions、路线手动选择标记，详见 [2026-10-20 区域与攻略优化](PLACE_GUIDE_2026-10-20.md)。该增量优先于下文旧默认值；重新校验仍不联网。
+request.mode 默认 auto，仍兼容五种显式方式；路线 mode 只保存实际方式。重新校验不联网。
 
-## 2026-10-19 接口增量
+## 行程与地图字段
 
-2026-10-20 合并补充：以下市内能力与全国多城市字段同时生效。`confirmed_hotel` 仅绑定首个目的地城市；公交城市参数和交通费用地区使用当前活动的 city。跨城 scope=intercity 的边界不进入市内选用与计费。局部修改保留已有 transfers；存储读取使用旧历史上下文。未传新的可选字段时保持默认值。
+以下市内能力与全国多城市字段同时生效。`confirmed_hotel` 仅绑定首个目的地城市；公交城市参数和交通费用地区使用当前活动的 city。跨城 scope=intercity 的边界不进入市内选用与计费。局部修改保留已有 transfers；存储读取使用旧历史上下文。未传新的可选字段时保持默认值。
 
-限流补充：路线 `failure_code=map_rate_limit` 表示短时频率限制，`map_quota` 表示日额度/余额耗尽，`map_ip_limit` 表示 IP 受限；页面错误带原始高德码，HTTP/SSE 结构不变。QPS/HTTP429 最多退避重试两次，备选交通受限不撤销已核实主路线，必需路线不可用仍是校验错误。配置、原理与验收见 [限流修复](RATE_LIMIT_FIX_2026-10-19.md)。
+限流补充：路线 `failure_code=map_rate_limit` 表示短时频率限制，`map_quota` 表示日额度/余额耗尽，`map_ip_limit` 表示 IP 受限；页面错误带原始高德码，HTTP/SSE 结构不变。QPS/HTTP429 最多退避重试两次，备选交通受限不撤销已核实主路线，必需路线不可用仍是校验错误。配置见 [配置说明](CONFIGURATION.md)。
 
 运行版本补充：health 增加 `build_id`（启动时后端源码指纹）、`started_at`、`rate_limit={qps_per_endpoint,scope,max_retries}` 和 `last_failure`。后者仅包含最近失败的阶段、异常类型、供应商码、接口路径和耗时，不包含输入、Key 或攻略正文。启动脚本会比较已运行版本和磁盘版本；需重新加载时使用 restart.bat，不将旧进程误报为已更新。
 
 - Mode 扩展为 `walking/driving/transit/bicycling/taxi`。request.mode 是默认方式，逐段实际方式以 routes[].mode 为准。
 - TripRequest 新增 `compare_modes=true`、`guides=[]`。每条 guide 为 `{title, text, url:'', published_date:null}`，最多 3 条，正文最多 6000 字；url 只保留来源，不自动抓取。
-- Stop 新增 `place_name=''` 和 `location_behavior='poi'`。后者允许 poi/same_as_previous/unlocated，仅 break 可使用 same_as_previous；旧版无该字段的 break 不擅自视为原地休息。
+- Stop 新增 `place_name=''` 和 `location_behavior='poi'`。后者允许 poi/area/same_as_previous/unlocated，仅 break 可使用 same_as_previous；旧版无该字段的 break 不擅自视为原地休息。
 - Itinerary 新增 `guide_insights=[]`，元素 `{source_index, text}`，只指向 request.guides 中存在的来源；属于未核实经验信息。
 - RouteLeg 新增 `failure_code=''`、`stationary=false`、`fare_yuan=null`、`instructions=[]`、`alternatives=[]`。候选含 mode/available/distance_m/duration_s/polyline/fare_yuan/instructions/note/failure_code；原地转移可为 0 米/秒且无 polyline，必须标记 stationary。
 - PlanRecord 新增 `adjustments=[]`，说明有界时间顺延或无法当天排完的情况。
@@ -29,6 +29,15 @@
 - generate/revise 在进入模型前拒绝过去日期，使用中国标准时间；历史记录读取和 validate 不因此拒绝旧日期。
 - **规则变更**：missing_location/missing_route 现在属于 errors；缺少距离、耗时或真实路线形状也会使路线不可用。新增 warnings：missing_food_cost/missing_hotel_cost/missing_transport_cost/hotel_arrival/hotel_departure/walking_load/pace_limit；unknowns 增加 ticket_coverage/transport_fare。
 - 新字段默认值兼容旧 SQLite 记录，金额/坐标/版本和 SSE 事件名称不变。以下原有说明中与本增量冲突的枚举和分类以本段及模型为准。
+
+
+- TripRequest.guide_mode=prefer/inspiration，默认 prefer；优先保留攻略地点与合理顺序，或仅参考灵感。
+- Stop 区域字段：area_name、area_poi_id、anchor_note；location_behavior=area 时从地图真实子地点或明确入口选通勤点，刷新保留已核实点，不生成随机坐标。
+- Stop 营业参考：opening_hours_status=unknown/map_reference，opening_hours、opening_hours_today、opening_hours_scope=place/area、information_source、information_queried_at、average_cost_yuan；参考来自地图，不保证出行日开放，平均消费不作为门票。
+- Expense.stop_id 关联活动，expenses 仍是唯一费用账本，地点展示不重复计费。
+- Itinerary.guide_decisions 每条为 `{source_index,excerpt,place_names,status,stop_ids,reason}`；status=adopted/adjusted/not_used，原文摘录与活动关系需复核，不能据攻略声称已完成官方核实。
+- RouteLeg.user_selected=false、selection_reason=''：记录手动方式；刷新使用 auto 重新比较，同时保留仍可用的手动选择。
+- Stop.food_recommendations=[]、food_reference=''、meal_period=breakfast/lunch/dinner/空；DayPlan.meal_note=''，表示推荐菜品、地图美食参考及无餐／偏时用餐提醒。菜品不保证当天供应。
 
 ## 统一规则
 
