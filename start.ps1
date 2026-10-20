@@ -10,6 +10,12 @@ $url = "http://127.0.0.1:$serverPort"
 try {
     $ready = Invoke-RestMethod -Uri "$url/api/health" -TimeoutSec 5 -ErrorAction Stop
     if ($ready.app_id -eq 'travel-assistant') {
+        $expectedBuild = & $pythonPath -c 'from backend.build_info import source_fingerprint; print(source_fingerprint())'
+        if ($LASTEXITCODE -ne 0) { throw 'Could not check backend version.' }
+        if ($ready.build_id -ne $expectedBuild) {
+            Write-Host 'The running server has older code. Run restart.bat to load the update.' -ForegroundColor Yellow
+            exit 2
+        }
         Write-Host "Travel Assistant is already running. Open $url"
         exit 0
     }

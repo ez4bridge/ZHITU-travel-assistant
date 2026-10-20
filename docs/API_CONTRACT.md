@@ -2,6 +2,34 @@
 
 核对当前源码：2026-10-20。此文约定小队如何对接；完整字段、长度、范围与默认值以 `backend/models.py` 为准，前端消费类型在 `frontend/src/types.ts`，目前没有自动代码生成。后端启动后可访问 `/docs` 查看请求模型；SSE 和部分直接返回 dict 的响应仍以本说明及实现为准，OpenAPI 不会自动表达全部流协议。
 
+最新增量：request.mode 默认 auto（仍兼容五种显式方式），路线 mode 只保存实际方式。新增区域真实选点、Expense.stop_id、地图营业参考字段、guide_mode/guide_decisions、路线手动选择标记，详见 [2026-10-20 区域与攻略优化](PLACE_GUIDE_2026-10-20.md)。该增量优先于下文旧默认值；重新校验仍不联网。
+
+## 2026-10-19 接口增量
+
+2026-10-20 合并补充：以下市内能力与全国多城市字段同时生效。`confirmed_hotel` 仅绑定首个目的地城市；公交城市参数和交通费用地区使用当前活动的 city。跨城 scope=intercity 的边界不进入市内选用与计费。局部修改保留已有 transfers；存储读取使用旧历史上下文。未传新的可选字段时保持默认值。
+
+限流补充：路线 `failure_code=map_rate_limit` 表示短时频率限制，`map_quota` 表示日额度/余额耗尽，`map_ip_limit` 表示 IP 受限；页面错误带原始高德码，HTTP/SSE 结构不变。QPS/HTTP429 最多退避重试两次，备选交通受限不撤销已核实主路线，必需路线不可用仍是校验错误。配置、原理与验收见 [限流修复](RATE_LIMIT_FIX_2026-10-19.md)。
+
+运行版本补充：health 增加 `build_id`（启动时后端源码指纹）、`started_at`、`rate_limit={qps_per_endpoint,scope,max_retries}` 和 `last_failure`。后者仅包含最近失败的阶段、异常类型、供应商码、接口路径和耗时，不包含输入、Key 或攻略正文。启动脚本会比较已运行版本和磁盘版本；需重新加载时使用 restart.bat，不将旧进程误报为已更新。
+
+- Mode 扩展为 `walking/driving/transit/bicycling/taxi`。request.mode 是默认方式，逐段实际方式以 routes[].mode 为准。
+- TripRequest 新增 `compare_modes=true`、`guides=[]`。每条 guide 为 `{title, text, url:'', published_date:null}`，最多 3 条，正文最多 6000 字；url 只保留来源，不自动抓取。
+- Stop 新增 `place_name=''` 和 `location_behavior='poi'`。后者允许 poi/same_as_previous/unlocated，仅 break 可使用 same_as_previous；旧版无该字段的 break 不擅自视为原地休息。
+- Itinerary 新增 `guide_insights=[]`，元素 `{source_index, text}`，只指向 request.guides 中存在的来源；属于未核实经验信息。
+- RouteLeg 新增 `failure_code=''`、`stationary=false`、`fare_yuan=null`、`instructions=[]`、`alternatives=[]`。候选含 mode/available/distance_m/duration_s/polyline/fare_yuan/instructions/note/failure_code；原地转移可为 0 米/秒且无 polyline，必须标记 stationary。
+- PlanRecord 新增 `adjustments=[]`，说明有界时间顺延或无法当天排完的情况。
+- `POST /api/plans/{id}/route` 输入 `{day_index,from_id,to_id,mode,expected_routing_revision?}`，普通 JSON 返回同 id/revision 的 PlanRecord，routing_revision 加一；仅接受已有可用候选，切换后重算当天费用和时间、不调用模型或地图。过期修订返回 409；不会新增历史版本。
+- TripRequest 新增 `confirmed_hotel=''`。留空只建议住宿片区，不保留模型选定的酒店起终点。PlanRecord 新增 `routing_revision=0`、`schedule_baseline={stop_id:[start,end]}`，交通切换从基线重排，避免时间反复向后漂移。
+- RouteLeg/RouteOption 新增 `provider_endpoint=''`、`taxi_cost_yuan=null`、`tolls_yuan=null`、`cost_estimate=null`。cost_estimate 为 `{low,high,basis:person|vehicle,method,assumptions,source_url}`，人民币元/人或辆；预算逐段取上限，车辆数量按 ceil(people/4)。接口未给的费用不声称已查到，假设明确展示。历史未记录接口来源时不补造来源。
+- refresh 同时核对顺路餐饮与未确认住宿，不调用模型；结构变更保留原方案。短途公交无方案时可推荐已查询成功的 ≤1500 米步行路线并说明原因。同名 POI 可用唯一明确的景区类型区分景点与道路，分店歧义仍不自动挑选。历史列表隐藏结构相同的旧交通切换祖先，原记录仍可按 id 读取，不删除数据。
+- `POST /api/plans/{id}/refresh` 无业务请求体，SSE 返回 PlanRecord；活动结构不变时更新同一记录，餐饮/住宿活动变更才保存新版本；只查询地图，不调用模型。重新校验端点不变。
+- revise 新增可选 `trip`（完整 TripRequest）、`day_index`。不传 trip 时沿用旧需求；仅改当天时日期/天数不能改变，更换目的地需重新生成。其他天及路线保留。
+- `DELETE /api/plans/{id}` 仅删除该版本，返回 `{deleted:true}`，不级联。
+- health 新增 tasks：active/completed/failed/cancelled/last_duration_s，仅本进程内统计、重启清零，不代表服务质量承诺。
+- generate/revise 在进入模型前拒绝过去日期，使用中国标准时间；历史记录读取和 validate 不因此拒绝旧日期。
+- **规则变更**：missing_location/missing_route 现在属于 errors；缺少距离、耗时或真实路线形状也会使路线不可用。新增 warnings：missing_food_cost/missing_hotel_cost/missing_transport_cost/hotel_arrival/hotel_departure/walking_load/pace_limit；unknowns 增加 ticket_coverage/transport_fare。
+- 新字段默认值兼容旧 SQLite 记录，金额/坐标/版本和 SSE 事件名称不变。以下原有说明中与本增量冲突的枚举和分类以本段及模型为准。
+
 ## 统一规则
 
 - 同源相对路径，无账号认证；本地原型不具备用户数据隔离。
@@ -25,7 +53,7 @@
 | `GET /api/plans` | 无 | 最近 50 条摘要数组，created_at 倒序；目前无分页 |
 | `GET /api/plans/{id}` | 版本 id | 完整 PlanRecord；不存在 404 |
 | `POST /api/plans/{id}/validate` | 无请求体 | ValidationReport，使用存量路线、不调用模型、不写回历史 |
-| `POST /api/plans/{id}/revise` | `{"instruction":"…"}` | POST SSE，新版本；不存在 404，空白要求 422 |
+| `POST /api/plans/{id}/revise` | `{instruction, trip?, day_index?}` | POST SSE，新版本；不存在 404，空白要求 422 |
 | `GET /_AMapService/{path}` | SDK 查询参数 | 受限高德代理；前缀只允许 v3/ 或 v4/map/，额外拦截危险路径 |
 
 `/api/health` 的 `status=ok` 表示本服务响应，不表示远程 Key/余额有效。`missing` 当前检查模型 Key、Web 服务 Key、JS Key、安全密钥是否为空；按账号要求选填的签名私钥不在该列表。`planning` 取决于模型 Key + Web 服务 Key，`map` 取决于 JS Key + 安全密钥，`routing` 取决于 Web 服务 Key。校验器可为 `python`/`cangjie`。
@@ -51,9 +79,9 @@
 }
 ```
 
-必填 start_date；destinations 或 destination 至少填写一种。推荐新表单 destinations=[{"city":"成都","preferred_days":2},{"city":"重庆","preferred_days":1}]，不发送 days，由服务端自动合计。兼容旧 API 的 null 表示按总天数自动分配；destinations 最多五项。city 去空白后是单个城市名（1–40 字）；preferred_days 默认 null（自动分配），可为 0.5–10、步长 0.5 的数值或十进制字符串。提供结构化列表时服务端生成 destination；同时传入的文本若顺序不一致则拒绝。兼容的 destination 为按顺序填写的 1–5 城文本，支持 →、->、逗号、顿号、分号或换行分隔，最多 240 字，每城最多 40 字；相邻城市不得相同。days 1–10，people 1–50，budget 大于 0 且不超过 10000000；origin 可为空。style 为 relaxed/balanced/compact，mode 为 walking/driving，preferences 最长 2000 字符。新增 intercity_mode=train/flight/bus/driving（默认 train）、include_origin_transport=false、return_to_origin=false。include_origin_transport 为真需要 origin；return_to_origin 为真需要 origin，并自动包含出发交通。旧 JSON 缺少这些字段时继续不计出发交通。历史 JSON 没有 destinations 时默认 []；旧六城记录仅在存储读取上下文允许查看，新生成／修改仍限制五城。默认值见模型，前端应明确发送用户选择值。
+必填 start_date；destinations 或 destination 至少填写一种。推荐新表单 destinations=[{"city":"成都","preferred_days":2},{"city":"重庆","preferred_days":1}]，不发送 days，由服务端自动合计。兼容旧 API 的 null 表示按总天数自动分配；destinations 最多五项。city 去空白后是单个城市名（1–40 字）；preferred_days 默认 null（自动分配），可为 0.5–10、步长 0.5 的数值或十进制字符串。提供结构化列表时服务端生成 destination；同时传入的文本若顺序不一致则拒绝。兼容的 destination 为按顺序填写的 1–5 城文本，支持 →、->、逗号、顿号、分号或换行分隔，最多 240 字，每城最多 40 字；相邻城市不得相同。days 1–10，people 1–50，budget 大于 0 且不超过 10000000；origin 可为空。style 为 relaxed/balanced/compact，mode 为 auto/walking/driving/transit/bicycling/taxi（默认 auto），preferences 最长 2000 字符。新增 intercity_mode=train/flight/bus/driving（默认 train）、include_origin_transport=false、return_to_origin=false。include_origin_transport 为真需要 origin；return_to_origin 为真需要 origin，并自动包含出发交通。旧 JSON 缺少这些字段时继续不计出发交通。历史 JSON 没有 destinations 时默认 []；旧六城记录仅在存储读取上下文允许查看，新生成／修改仍限制五城。默认值见模型，前端应明确发送用户选择值。
 
-修改请求 instruction 去首尾空白后不能为空、最长 2000 字符；本接口使用原版本 request。如果要支持修改预算/日期等结构化需求，应设计接口变更并同步调用处，不能只改提示词就声称原 request 已改变。
+修改请求 instruction 去首尾空白后不能为空、最长 2000 字符；默认使用原版本 request，也可传完整 trip 更新预算/日期等需求。day_index 仅用于日期/天数保持不变的局部修改。
 
 ## SSE 流
 
@@ -82,7 +110,7 @@ data: {"name":"search_places","arguments":{"keywords":"外滩"},"summary":"找�
 
 | 字段 | 说明 |
 |---|---|
-| id / parent_id / revision | 每次保存一个新版本；首次 parent_id=null、revision=1；修改指向所选父版本并 +1 |
+| id / parent_id / revision | 活动修改或活动结构变化的刷新保存新版本；首次 parent_id=null、revision=1；交通切换及活动结构不变的刷新保留这些字段，仅增加 routing_revision |
 | created_at | UTC 时间；不是日程活动时间 |
 | request | 生成该版本所用原始需求 |
 | itinerary | title、summary、days、tips、transfers |
@@ -107,9 +135,9 @@ status 优先级：有 errors **或 warnings** 即 `issues`；否则有 unknowns
 
 | 分类 | code |
 |---|---|
-| 错误 | day_count、date_mismatch、before_start、over_budget、invalid_duration、time_overlap、transfer_time |
-| 提醒 | missing_cost、duplicate_stop、stay_preference |
-| 未知 | estimated_prices、opening_hours、missing_location、missing_route、intercity_estimates |
+| 错误 | day_count、date_mismatch、before_start、over_budget、invalid_duration、time_overlap、transfer_time、missing_location、missing_route |
+| 提醒 | missing_cost、duplicate_stop、stay_preference、missing_food_cost、missing_hotel_cost、missing_transport_cost、hotel_arrival、hotel_departure、walking_load、pace_limit |
+| 未知 | estimated_prices、opening_hours、ticket_coverage、transport_fare、intercity_estimates |
 
 历史摘要字段：id/title/destination/start_date/revision/created_at/status。摘要 status 为保存时的值；打开历史后新校验结果可能不同，不代表重新查过路线或营业时间。
 
@@ -153,6 +181,8 @@ CityTransfer 新字段均有默认值，旧 SQLite 记录继续可读：
 
 ## 表单简化与天数自动汇总
 
-新表单不再填写旅行总天数；每个目的地 preferred_days 默认 1，可按半天选择，提交时不发送 days。若请求未显式提供 days 且 destinations 的时长均非 null，服务端按 Decimal 求和后向上取整得到 days，仍限制 1–10 天（如 1.5+1=3，0.5+0.5=1）。响应和存储继续包含 days，供日期、预算和校验使用。显式 days 的旧 API／历史记录保持原语义；旧自动分配项在表单重新规划时默认显示 1 天，不回写原记录。返程勾选及对应 return_to_origin 协议保留。市内出行控件仅从界面隐藏，mode 协议继续支持 walking/driving；新建默认 walking，历史记录仍保留原 mode。
+新表单不再填写旅行总天数；每个目的地 preferred_days 默认 1，可按半天选择，提交时不发送 days。若请求未显式提供 days 且 destinations 的时长均非 null，服务端按 Decimal 求和后向上取整得到 days，仍限制 1–10 天（如 1.5+1=3，0.5+0.5=1）。响应和存储继续包含 days，供日期、预算和校验使用。显式 days 的旧 API／历史记录保持原语义；旧自动分配项在表单重新规划时默认显示 1 天，不回写原记录。返程勾选及对应 return_to_origin 协议保留。市内出行控件已移除，新建提交 mode=auto、compare_modes=true；mode 协议仍兼容五种显式交通，历史记录保留原 mode。
 
 铁路服务源码随仓库收录于 third_party/mcp-server-12306，独立解释器默认路径调整为 .tools/rail-mcp/.venv 下的平台 Python；显式 RAIL_MCP_PYTHON 继续优先。新配置模板启用铁路，原有配置不覆盖。HTTP 与 SSE 字段不变。
+
+前端攻略输入现仅包含正文，提交 `{title:参考攻略 N,text}`，编号按当前顺序重算；不再要求或提交 URL、发表日期。API 保留旧可选 url/published_date 字段及默认值，历史无需迁移。

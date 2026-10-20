@@ -1,0 +1,2 @@
+# Preserve the exact upstream bytes recorded in UPSTREAM.json on every platform.
+third_party/mcp-server-12306/** -text

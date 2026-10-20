@@ -46,3 +46,31 @@ footer{display:flex;align-items:center;gap:22px;border-top:1px solid var(--line)
 .city-suggestions{position:absolute;z-index:60;left:0;top:100%;width:max-content;min-width:100%;max-width:270px;list-style:none;padding:4px;margin:5px 0 0;background:#fff;border:1px solid #dce6d2;border-radius:8px;box-shadow:0 8px 24px #29412722;max-height:240px;overflow:auto}
 .city-suggestions button{display:flex;gap:10px;align-items:center;justify-content:space-between;text-align:left;width:100%;padding:9px;font-size:12px}.city-suggestions button:hover,.city-suggestions button:focus-visible{background:#f1f6e9}.city-suggestions small{font-size:9px;color:#788875}
 @media(max-width:520px){.destination-actions button{padding:7px}.destination-inputs{grid-template-columns:minmax(0,1fr) 104px}.destination-inputs .input-wrap input{font-size:13px}.stay-select select{font-size:12px}.destination-help{font-size:10px}.city-suggestions{max-width:230px}}
+/* Route comparison and source inputs share the existing card layout. */
+.field select, .guide-input input, .guide-input textarea { width: 100%; max-width: 100%; padding: 10px; border: 1px solid #dce4df; border-radius: 8px; background: white; color: inherit; font: inherit; }
+.compare-toggle { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; font-size: 11px; line-height: 1.7; }
+.guide-input { margin: 14px 0; font-size: 12px; }
+.guide-input summary, .route-choices summary { cursor: pointer; line-height: 1.8; }
+.guide-source { border-top: 1px solid #dce4df; margin-top: 12px; padding-top: 12px; }
+.route-choices { margin: 8px 0 12px 38px; padding: 10px 12px; border-radius: 8px; background: #f3f7f4; font-size: 11px; overflow-wrap: anywhere; }
+.route-choice { display: flex; gap: 12px; justify-content: space-between; align-items: center; padding: 10px 0; border-top: 1px solid #dce4df; }
+.route-choice span, .route-choice small { display: block; line-height: 1.8; }
+.route-choice button { flex-shrink: 0; }
+.plan-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 18px; }
+.plan-actions small { flex: 1 1 180px; line-height: 1.8; }
+.travel-tips article { overflow-wrap: anywhere; margin-bottom: 12px; }
+.stop-body > small { display: block; font-size: 9px; margin-top: 6px; }
+.field select, .guide-input input { font-size: 13px; }
+.input-wrap select { border: 0; padding: 12px 0; border-radius: 0; background: transparent; }
+.guide-input textarea { font-size: 12px; }
+.route-choice small, .plan-actions small, .guide-input small { font-size: 9px; color: var(--muted); }
+.route-choice button { font-size: 10px; }
+.route-choice a { color: var(--green); }
+.stop-facts { margin: 4px 0 10px 38px; padding: 0 10px; font-size: 11px; line-height: 1.8; color: #677a61; overflow-wrap: anywhere; }
+.stop-facts details, .guide-evidence small, .guide-evidence a { font-size: 9px; }
+.stop-facts summary { cursor: pointer; color: var(--muted); }
+.stop-facts a, .guide-evidence a { color: var(--green); }
+.guide-evidence article { padding-top: 10px; margin-top: 10px; border-top: 1px solid var(--line); font-size: 11px; }
+.guide-evidence blockquote { margin: 6px 0; padding-left: 10px; border-left: 2px solid var(--line); color: var(--muted); font-size: 11px; }
+@media (max-width: 600px) { .stop-facts { margin-left: 10px; } }
+@media (max-width: 600px) { .route-choices { margin-left: 10px; } .plan-actions { align-items: stretch; flex-direction: column; } .plan-actions small { flex: 0 1 auto; } }

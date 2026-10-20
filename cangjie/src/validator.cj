@@ -311,7 +311,7 @@ func validate(input: Json): Json {
                 seen.add(identity)
             }
             if (stop.get("needs_poi").flag && !stop.get("poi_ok").flag) {
-                unknowns.items.add(issue("missing_location", "地点未定位，路线和通行时间无法验证", dayIndex, id))
+                errors.items.add(issue("missing_location", "地点未定位，行程尚不可执行，请选择具体地点", dayIndex, id))
             }
         }
         if (stops.size < 2) { continue }
@@ -323,14 +323,14 @@ func validate(input: Json): Json {
                     found = true
                     if (leg.has("intercity") && leg.get("intercity").flag) { break }
                     if (!leg.get("available").flag) {
-                        unknowns.items.add(issue("missing_route", "相邻地点没有可用的真实路线", dayIndex, after.get("id").text))
+                        errors.items.add(issue("missing_route", "相邻地点没有可用的真实路线，行程尚不可执行", dayIndex, after.get("id").text))
                     } else if (after.get("start_min").number - before.get("end_min").number < leg.get("duration_min").number) {
                         errors.items.add(issue("transfer_time", "活动之间预留的时间不足以完成实际路线", dayIndex, after.get("id").text))
                     }
                     break
                 }
             }
-            if (!found) { unknowns.items.add(issue("missing_route", "相邻地点没有可用的真实路线", dayIndex, after.get("id").text)) }
+            if (!found) { errors.items.add(issue("missing_route", "相邻地点没有可用的真实路线，行程尚不可执行", dayIndex, after.get("id").text)) }
         }
     }
     let status = if (errors.items.size > 0 || warnings.items.size > 0) { "issues" }

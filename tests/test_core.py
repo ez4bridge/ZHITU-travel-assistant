@@ -2,7 +2,7 @@ import asyncio
 import copy
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -18,9 +18,9 @@ from backend.config import settings
 
 
 def sample():
-    request = TripRequest(destination='上海', start_date='2026-10-21', days=1, people=3, budget=1000)
+    request = TripRequest(destination='上海', start_date=(datetime.now(timezone(timedelta(hours=8))) + timedelta(days=2)).date(), days=1, people=3, budget=1000)
     itinerary = Itinerary.model_validate({'title': '沿江漫游', 'summary': '一段城市旅行', 'days': [{
-        'date': '2026-10-21', 'title': '沿江', 'stops': [
+        'date': request.start_date, 'title': '沿江', 'stops': [
             {'id': 'a', 'name': '外滩', 'start': '09:00', 'end': '10:00', 'poi_id': 'POI1',
              'location': [121.49, 31.23], 'location_status': 'verified'},
             {'id': 'b', 'name': '豫园', 'start': '10:30', 'end': '12:00', 'poi_id': 'POI2',
@@ -70,8 +70,8 @@ def test_route_duration_rounds_up_and_unknown_is_not_passed():
     routes[0].available = False
     itinerary.days[0].stops[1].location = None
     report = validate_core(normalized_input(request, itinerary, routes))
-    assert {'missing_location', 'missing_route'} <= {i['code'] for i in report['unknowns']}
-    assert report['status'] == 'passed_with_unknowns'
+    assert {'missing_location', 'missing_route'} <= {i['code'] for i in report['errors']}
+    assert report['status'] == 'issues'
 
 
 @pytest.mark.asyncio
@@ -254,6 +254,9 @@ async def test_native_cangjie_unicode_and_malformed_json():
     executable = Path(__file__).resolve().parents[1] / 'cangjie' / 'bin' / 'validator.exe'
     if not executable.is_file():
         pytest.skip('Optional native module not built')
+    service = Validator(executable=executable, preferred='auto')
+    if not await service.ready():
+        pytest.skip('Optional native runtime unavailable: ' + service.diagnostic)
     data = normalized_input(*sample())
     data['unknowns'].append({'code': 'utf8', 'message': '上海+\"\\\n🏞', 'day_index': None, 'stop_id': None})
     process = await asyncio.create_subprocess_exec(str(executable), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE)

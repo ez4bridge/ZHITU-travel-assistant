@@ -78,6 +78,6 @@ onBeforeUnmount(() => { mounted = false; map?.destroy() })
     <div v-if="!loading && !error && !stops.some(s => s.location)" class="map-no-poi">
       <MapPin :size="18" /> 地点尚未定位，暂时没有路线可展示
     </div>
-    <div class="map-legend"><span></span> 高德{{ routes[0]?.mode === 'driving' ? '驾车' : '步行' }}路线 <small>GCJ-02</small></div>
+    <div class="map-legend"><span></span> 高德已选交通路线 <small>GCJ-02</small></div>
   </div>
 </template>

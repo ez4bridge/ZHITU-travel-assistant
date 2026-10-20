@@ -5,6 +5,8 @@ from typing import Literal
 import re
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
+Mode = Literal['walking', 'driving', 'transit', 'bicycling', 'taxi']
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -27,6 +29,30 @@ def split_cities(value: str) -> list[str]:
     return [city.strip() for city in re.split(r'\s*(?:→|->|、|，|,|；|;|\n)\s*', value) if city.strip()]
 
 
+
+
+class GuideSource(StrictModel):
+    title: str = Field(min_length=1, max_length=120)
+    url: str = Field(default='', max_length=1000)
+    text: str = Field(min_length=1, max_length=6000)
+    published_date: date | None = None
+
+    @field_validator('title', 'text')
+    @classmethod
+    def nonblank(cls, value):
+        if not value.strip():
+            raise ValueError('攻略标题和正文不能为空')
+        return value.strip()
+
+    @field_validator('url')
+    @classmethod
+    def public_link(cls, value):
+        from urllib.parse import urlsplit
+        if value and (urlsplit(value).scheme not in ('https', 'http') or not urlsplit(value).hostname):
+            raise ValueError('来源链接应为 http 或 https 网页')
+        return value
+
+
 class TripRequest(StrictModel):
     origin: str = Field(default='', max_length=80)
     destination: str = Field(default='', max_length=240)
@@ -37,11 +63,15 @@ class TripRequest(StrictModel):
     style: Literal['relaxed', 'balanced', 'compact'] = 'balanced'
     budget: Decimal = Field(default=Decimal('3000'), gt=0, le=10000000)
     people: int = Field(default=2, ge=1, le=50)
-    mode: Literal['walking', 'driving'] = 'walking'
+    mode: Literal['auto', 'walking', 'driving', 'transit', 'bicycling', 'taxi'] = 'auto'
     intercity_mode: Literal['train', 'flight', 'bus', 'driving'] = 'train'
     include_origin_transport: bool = False
     return_to_origin: bool = False
     preferences: str = Field(default='', max_length=2000)
+    guides: list[GuideSource] = Field(default_factory=list, max_length=3)
+    compare_modes: bool = True
+    confirmed_hotel: str = Field(default='', max_length=120)
+    guide_mode: Literal['prefer', 'inspiration'] = 'prefer'
 
     @field_validator('start_time')
     @classmethod
@@ -120,8 +150,28 @@ class Stop(StrictModel):
     location: tuple[float, float] | None = None
     matched_name: str = ''
     location_status: Literal['verified', 'unknown'] = 'unknown'
-    opening_hours_status: Literal['unknown'] = 'unknown'
+    opening_hours_status: Literal['unknown', 'map_reference'] = 'unknown'
+    opening_hours: str = Field(default='', max_length=1200)
+    opening_hours_today: str = Field(default='', max_length=500)
+    opening_hours_scope: Literal['place', 'area'] = 'place'
+    information_source: str = ''
+    information_queried_at: datetime | None = None
+    average_cost_yuan: Decimal | None = Field(default=None, ge=0, le=10000000)
+    area_name: str = Field(default='', max_length=120)
+    area_poi_id: str = ''
+    anchor_note: str = Field(default='', max_length=500)
+    food_recommendations: list[str] = Field(default_factory=list, max_length=6)
+    food_reference: str = Field(default='', max_length=500)
+    meal_period: Literal['', 'breakfast', 'lunch', 'dinner'] = ''
     location_note: str = ''
+    place_name: str = Field(default='', max_length=120)
+    location_behavior: Literal['poi', 'area', 'same_as_previous', 'unlocated'] = 'poi'
+
+    @model_validator(mode='after')
+    def stationary_is_break(self):
+        if self.location_behavior == 'same_as_previous' and self.kind != 'break':
+            raise ValueError('仅原地休息可继承前一地点；其他活动需指定真实地点')
+        return self
 
     @field_validator('start', 'end')
     @classmethod
@@ -139,6 +189,7 @@ class Expense(StrictModel):
     quantity: int = Field(default=1, ge=1, le=1000)
     basis: Literal['person', 'group'] = 'group'
     estimated: Literal[True] = True
+    stop_id: str = ''
     note: str = Field(default='模型估算，未查询实时价格', max_length=500)
 
 
@@ -148,6 +199,7 @@ class DayPlan(StrictModel):
     stops: list[Stop] = Field(max_length=12)
     expenses: list[Expense] = Field(default_factory=list, max_length=20)
     accommodation: str = Field(default='', max_length=500)
+    meal_note: str = Field(default='', max_length=1000)
 
 
 class CityTransfer(StrictModel):
@@ -188,13 +240,28 @@ class CityTransfer(StrictModel):
         return value
 
 
+class GuideInsight(StrictModel):
+    source_index: int = Field(ge=0, le=2)
+    text: str = Field(min_length=1, max_length=600)
+
+
+class GuideDecision(StrictModel):
+    source_index: int = Field(ge=0, le=2)
+    excerpt: str = Field(min_length=1, max_length=300)
+    place_names: list[str] = Field(default_factory=list, max_length=8)
+    status: Literal['adopted', 'adjusted', 'not_used'] = 'not_used'
+    stop_ids: list[str] = Field(default_factory=list, max_length=12)
+    reason: str = Field(min_length=1, max_length=600)
+
+
 class Itinerary(StrictModel):
     title: str = Field(min_length=1, max_length=160)
     summary: str = Field(max_length=1500)
     days: list[DayPlan] = Field(min_length=1, max_length=10)
     tips: list[str] = Field(default_factory=list, max_length=10)
     transfers: list[CityTransfer] = Field(default_factory=list, max_length=14)
-
+    guide_insights: list[GuideInsight] = Field(default_factory=list, max_length=12)
+    guide_decisions: list[GuideDecision] = Field(default_factory=list, max_length=30)
 
 def itinerary_expenses(itinerary: Itinerary) -> Iterator[Expense]:
     for day in itinerary.days:
@@ -204,11 +271,20 @@ def itinerary_expenses(itinerary: Itinerary) -> Iterator[Expense]:
                       unit_cost=transfer.unit_cost, basis=transfer.basis, note=transfer.note)
 
 
+class TransportCost(StrictModel):
+    low: Decimal = Field(ge=0)
+    high: Decimal = Field(ge=0)
+    basis: Literal['person', 'vehicle']
+    method: str
+    assumptions: str
+    source_url: str = ''
+
+
 class RouteLeg(StrictModel):
     day_index: int
     from_id: str
     to_id: str
-    mode: Literal['walking', 'driving']
+    mode: Mode
     scope: Literal['local', 'intercity'] = 'local'
     available: bool = False
     distance_m: int | None = None
@@ -216,6 +292,33 @@ class RouteLeg(StrictModel):
     polyline: list[tuple[float, float]] = Field(default_factory=list)
     queried_at: datetime
     note: str = ''
+    failure_code: str = ''
+    stationary: bool = False
+    fare_yuan: Decimal | None = Field(default=None, ge=0)
+    instructions: list[str] = Field(default_factory=list)
+    alternatives: list['RouteOption'] = Field(default_factory=list)
+    provider_endpoint: str = ''
+    taxi_cost_yuan: Decimal | None = Field(default=None, ge=0)
+    tolls_yuan: Decimal | None = Field(default=None, ge=0)
+    cost_estimate: TransportCost | None = None
+    user_selected: bool = False
+    selection_reason: str = ''
+
+
+class RouteOption(StrictModel):
+    mode: Mode
+    available: bool = False
+    distance_m: int | None = None
+    duration_s: int | None = None
+    polyline: list[tuple[float, float]] = Field(default_factory=list)
+    fare_yuan: Decimal | None = Field(default=None, ge=0)
+    instructions: list[str] = Field(default_factory=list)
+    note: str = ''
+    failure_code: str = ''
+    provider_endpoint: str = ''
+    taxi_cost_yuan: Decimal | None = Field(default=None, ge=0)
+    tolls_yuan: Decimal | None = Field(default=None, ge=0)
+    cost_estimate: TransportCost | None = None
 
 
 class Issue(StrictModel):
@@ -247,6 +350,9 @@ class PlanRecord(StrictModel):
     validation: ValidationReport
     revision_instruction: str = ''
     expense_totals: dict[str, int] = Field(default_factory=dict)
+    adjustments: list[str] = Field(default_factory=list)
+    routing_revision: int = 0
+    schedule_baseline: dict[str, tuple[str, str]] = Field(default_factory=dict)
 
     @model_validator(mode='after')
     def authoritative_cost_categories(self):
@@ -260,6 +366,8 @@ class PlanRecord(StrictModel):
 
 class RevisionRequest(StrictModel):
     instruction: str = Field(min_length=1, max_length=2000)
+    day_index: int | None = Field(default=None, ge=0, le=9)
+    trip: TripRequest | None = None
 
     @field_validator('instruction')
     @classmethod
@@ -267,6 +375,14 @@ class RevisionRequest(StrictModel):
         if not value.strip():
             raise ValueError('请输入修改要求')
         return value.strip()
+
+
+class RouteSelection(StrictModel):
+    day_index: int = Field(ge=0, le=9)
+    from_id: str
+    to_id: str
+    mode: Mode
+    expected_routing_revision: int | None = Field(default=None, ge=0)
 
 
 def cents(value: Decimal | str | int):

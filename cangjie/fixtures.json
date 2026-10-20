@@ -284,8 +284,11 @@
       ],
       "legs": []
     },
-    "expected_status": "passed_with_unknowns",
-    "expected_errors": [],
+    "expected_status": "issues",
+    "expected_errors": [
+      "missing_location",
+      "missing_route"
+    ],
     "expected_warnings": []
   },
   {
@@ -1559,8 +1562,10 @@
         "transfers": []
       }
     },
-    "expected_status": "passed_with_unknowns",
-    "expected_errors": [],
+    "expected_status": "issues",
+    "expected_errors": [
+      "missing_location"
+    ],
     "expected_warnings": []
   },
   {
@@ -1630,7 +1635,9 @@
       }
     },
     "expected_status": "issues",
-    "expected_errors": [],
+    "expected_errors": [
+      "missing_location"
+    ],
     "expected_warnings": [
       "stay_preference"
     ]
@@ -1702,7 +1709,9 @@
       }
     },
     "expected_status": "issues",
-    "expected_errors": [],
+    "expected_errors": [
+      "missing_location"
+    ],
     "expected_warnings": [
       "stay_preference"
     ]

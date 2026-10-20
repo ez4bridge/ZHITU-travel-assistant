@@ -20,6 +20,9 @@ class Settings:
         self.amap_web_key = os.getenv('AMAP_WEB_KEY', '').strip()
         self.amap_js_sec = os.getenv('AMAP_JS_SEC', '').strip()
         self.amap_sign_secret = os.getenv('AMAP_SIGN_SECRET', '').strip()
+        self.amap_qps = float(os.getenv('AMAP_QPS', '2'))
+        if not 0 < self.amap_qps <= 100:
+            raise ValueError('AMAP_QPS 必须大于 0 且不超过 100')
         self.validator = os.getenv('VALIDATOR_BACKEND', 'auto')
         self.port = int(os.getenv('PORT', '7862'))
         self.rail_mcp_enabled = os.getenv('RAIL_MCP_ENABLED', 'false').lower() in ('1', 'true', 'yes')

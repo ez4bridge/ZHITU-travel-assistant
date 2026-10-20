@@ -228,7 +228,7 @@ async def test_multicity_generate_revise_and_history_keep_independent_costs(monk
 
 def test_nationwide_fixture_contract():
     from pathlib import Path
-    cases = json.loads((Path(__file__).resolve().parents[1] / 'cangjie/fixtures.json').read_text())
+    cases = json.loads((Path(__file__).resolve().parents[1] / 'cangjie/fixtures.json').read_text(encoding='utf-8'))
     for case in cases:
         data = copy.deepcopy(case['input'])
         result = validate_core(data)

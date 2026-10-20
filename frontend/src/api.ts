@@ -1,5 +1,5 @@
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, init)
+  const response = await fetch(path, { ...init, headers: { ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...init?.headers } })
   if (!response.ok) {
     const body = await response.json().catch(() => ({}))
     throw new Error(typeof body.detail === 'string' ? body.detail : '请求失败，请检查填写内容或稍后重试')
