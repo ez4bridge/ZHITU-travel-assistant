@@ -19,11 +19,11 @@ class Store:
     def get(self, plan_id):
         with self.connect() as db:
             row = db.execute('SELECT data FROM plans WHERE id = ?', (plan_id,)).fetchone()
-        return PlanRecord.model_validate_json(row[0]) if row else None
+        return PlanRecord.model_validate_json(row[0], context={'legacy_record': True}) if row else None
 
     def list(self):
         with self.connect() as db:
             rows = db.execute('SELECT data FROM plans ORDER BY created_at DESC LIMIT 50').fetchall()
         return [{'id': p.id, 'title': p.itinerary.title, 'destination': p.request.destination,
                  'start_date': str(p.request.start_date), 'revision': p.revision, 'created_at': p.created_at.isoformat(),
-                 'status': p.validation.status} for p in (PlanRecord.model_validate_json(row[0]) for row in rows)]
+                 'status': p.validation.status} for p in (PlanRecord.model_validate_json(row[0], context={'legacy_record': True}) for row in rows)]

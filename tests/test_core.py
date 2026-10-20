@@ -209,7 +209,7 @@ async def test_two_requests_keep_separate_results(monkeypatch, tmp_path):
     import backend.main as main
     monkeypatch.setattr(main, 'store', Store(tmp_path / 'concurrent.sqlite3'))
     monkeypatch.setattr(main, 'validator', Validator(preferred='python'))
-    async def fake_generate(request, amap, emit, previous=None, instruction=''):
+    async def fake_generate(request, amap, emit, previous=None, instruction='', rail=None):
         await asyncio.sleep(.01)
         itinerary = sample()[1]
         itinerary.title = request.destination

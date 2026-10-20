@@ -7,7 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -17,6 +17,8 @@ from .amap import Amap
 from .agent import generate_itinerary
 from .storage import Store
 from .validation import validator
+from .cities import city_catalog
+from .railway import Railway
 
 store = Store()
 
@@ -47,6 +49,7 @@ async def health():
     ready = await validator.ready()
     return {'app_id': 'travel-assistant', 'status': 'ok', 'model': settings.llm_model,
             'capabilities': {'planning': bool(settings.llm_key and settings.amap_key), 'map': bool(settings.amap_web_key and settings.amap_js_sec),
+                             'railway': settings.rail_mcp_enabled and settings.rail_mcp_python.is_file(),
                              'routing': bool(settings.amap_key), 'validator': 'cangjie' if ready else 'python'},
             'missing': [name for name, value in [('LLM_API_KEY', settings.llm_key), ('AMAP_API_KEY', settings.amap_key),
                        ('AMAP_WEB_KEY', settings.amap_web_key), ('AMAP_JS_SEC', settings.amap_js_sec)] if not value],
@@ -57,6 +60,14 @@ async def health():
 async def map_config():
     # The JS API key is public by design. The signing and LLM keys are never returned.
     return {'key': settings.amap_web_key, 'security_proxy': '/_AMapService'}
+
+
+@app.get('/api/cities')
+async def city_suggestions(query: str = Query(default='', max_length=40)):
+    try:
+        return await city_catalog.search(query)
+    except RuntimeError:
+        raise HTTPException(503, '城市建议暂不可用，可直接输入城市名称') from None
 
 
 @app.get('/_AMapService/{path:path}')
@@ -97,6 +108,8 @@ async def validate_plan(plan_id):
 
 
 def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=''):
+    if len(trip.city_route) > 5:
+        raise HTTPException(422, '新规划最多 5 个目的地；旧的六城方案可查看，请调整城市后重新生成。')
     async def events():
         queue = asyncio.Queue()
 
@@ -104,10 +117,12 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
             await queue.put((kind, data))
 
         async def work():
-            amap = Amap(trip.destination, emit)
+            amap = Amap(trip.city_route, emit)
+            rail = Railway(trip, emit)
             try:
                 async with asyncio.timeout(180):
-                    itinerary = await generate_itinerary(trip, amap, emit, previous, instruction)
+                    itinerary = await generate_itinerary(trip, amap, emit, previous, instruction, rail=rail)
+                    await rail.enrich(itinerary)
                     routes = await amap.enrich(itinerary, trip.mode)
                     await emit('status', {'message': '正在校验时间、真实通行时长和全员预算'})
                     report = await validator.validate(trip, itinerary, routes)
@@ -123,7 +138,7 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
             except Exception as error:
                 await emit('error', {'message': settings.safe_error(error)})
             finally:
-                await amap.close()
+                await asyncio.gather(rail.close(), amap.close(), return_exceptions=True)
                 await queue.put(('done', {}))
 
         task = asyncio.create_task(work())

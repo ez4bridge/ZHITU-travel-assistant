@@ -1,11 +1,17 @@
 export type Mode = 'walking' | 'driving'
+export type IntercityMode = 'train' | 'flight' | 'bus' | 'driving'
+export interface DestinationStay { city: string; preferred_days: number | string | null }
+export interface CitySuggestion { name: string; province: string; adcode: string }
 export interface TripRequest {
   origin: string; destination: string; start_date: string; start_time: string
   days: number; style: 'relaxed' | 'balanced' | 'compact'; budget: number | string
   people: number; mode: Mode; preferences: string
+  intercity_mode: IntercityMode; include_origin_transport: boolean; return_to_origin: boolean
+  destinations: DestinationStay[]
 }
 export interface Stop {
   id: string; name: string; kind: 'sight' | 'meal' | 'hotel' | 'break'
+  city: string
   start: string; end: string; description: string; poi_id: string
   address: string; location: [number, number] | null; matched_name: string
   location_status: 'verified' | 'unknown'; location_note: string
@@ -19,7 +25,16 @@ export interface DayPlan {
 }
 export interface RouteLeg {
   day_index: number; from_id: string; to_id: string; mode: Mode; available: boolean
+  scope: 'local' | 'intercity'
   distance_m: number | null; duration_s: number | null; polyline: [number, number][]; note: string; queried_at: string
+}
+export interface CityTransfer {
+  from_city: string; to_city: string; departure_date: string; departure_time: string
+  arrival_date: string; arrival_time: string; mode: IntercityMode
+  unit_cost: string | number; basis: 'person' | 'group'; estimated: true; note: string
+  rail_option_id: string; schedule_status: 'estimated' | 'queried'; price_status: 'estimated' | 'reference'
+  train_code: string; departure_station: string; arrival_station: string
+  seat_type: string; seat_availability: string; queried_at: string | null; source: string; query_note: string
 }
 export interface Issue { code: string; message: string; day_index: number | null; stop_id: string | null }
 export interface ValidationReport {
@@ -29,7 +44,7 @@ export interface ValidationReport {
 }
 export interface Plan {
   id: string; parent_id: string | null; revision: number; created_at: string
-  request: TripRequest; itinerary: { title: string; summary: string; days: DayPlan[]; tips: string[] }
+  request: TripRequest; itinerary: { title: string; summary: string; days: DayPlan[]; tips: string[]; transfers: CityTransfer[] }
   routes: RouteLeg[]; validation: ValidationReport; revision_instruction: string
   expense_totals: Record<string, number>
 }

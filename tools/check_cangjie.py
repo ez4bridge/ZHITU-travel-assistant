@@ -37,8 +37,29 @@ async def main():
                 data['legs'].append({'day_index': 0, 'from_id': str(i-1), 'to_id': str(i),
                                      'duration_min': rng.randint(1, 100), 'available': rng.choice([True, False])})
         assert await validator.call_cangjie(data) == validate_core(data), f'random {index}'
+    national = [case['input'] for case in cases if case['input'].get('journey', {}).get('transfers')]
+    for index in range(120):
+        data = copy.deepcopy(rng.choice(national))
+        journey = data['journey']
+        transfer = rng.choice(journey['transfers'])
+        transfer['start_min'] += rng.randint(-1500, 1500)
+        transfer['end_min'] += rng.randint(-1500, 1500)
+        if rng.random() < .3:
+            journey['transfers'].pop()
+        if rng.random() < .3:
+            rng.choice(journey['stops'])['city'] = '未安排城市'
+        data['total_cents'] = rng.randint(0, data['budget_cents'] * 2)
+        assert await validator.call_cangjie(data) == validate_core(data), f'national random {index}'
+    preferences = [case['input'] for case in cases if case['input'].get('journey', {}).get('stays')]
+    for index in range(120):
+        data = copy.deepcopy(rng.choice(preferences))
+        stay = rng.choice(data['journey']['stays'])
+        stay['expected_halves'] = rng.randint(1, 20)
+        stay['actual_halves'] = rng.randint(0, 20)
+        assert await validator.call_cangjie(data) == validate_core(data), f'stay random {index}'
     assert await validator.ready()
-    result = {'golden_cases': len(cases), 'random_cases': 120, 'parity': 'passed', 'compiler': 'Cangjie 1.0.5'}
+    result = {'golden_cases': len(cases), 'random_cases': 120, 'national_random_cases': 120, 'stay_random_cases': 120,
+              'parity': 'passed', 'compiler': 'Cangjie 1.0.5'}
     (ROOT / '.runtime' / 'cangjie-check.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
     print(json.dumps(result))
 

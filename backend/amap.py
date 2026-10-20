@@ -7,7 +7,7 @@ from difflib import SequenceMatcher
 
 import httpx
 from .config import settings
-from .models import RouteLeg
+from .models import RouteLeg, city_key
 
 
 def signed_params(params, key, secret=''):
@@ -23,7 +23,9 @@ def signed_params(params, key, secret=''):
 
 class Amap:
     def __init__(self, city, emit=None):
-        self.city = city
+        # A request-local allowlist prevents cross-city names and POI IDs from mixing.
+        self.cities = [city] if isinstance(city, str) else list(city)
+        self.city = self.cities[0]
         self.emit = emit
         self.places = {}
         self.routes = {}
@@ -44,16 +46,29 @@ class Amap:
         except Exception as error:
             raise RuntimeError(settings.safe_error(error)) from None
 
-    async def search(self, keywords):
+    def canonical_city(self, city: str = '') -> str:
+        if not city and len(self.cities) == 1:
+            return self.city
+        found = next((value for value in self.cities if city_key(value) == city_key(city)), None)
+        if not found:
+            raise ValueError('查询城市必须来自本次目的地列表')
+        return found
+
+    async def search(self, keywords, city=''):
+        city = self.canonical_city(city)
         keywords = str(keywords).strip()[:120]
-        if keywords in self.places:
-            return self.places[keywords]
+        cache_key = (city_key(city), keywords)
+        if cache_key in self.places:
+            return self.places[cache_key]
         data = await self.request('/v3/place/text', {
-            'keywords': keywords, 'city': self.city, 'citylimit': 'true', 'offset': 5, 'page': 1,
+            'keywords': keywords, 'city': city, 'citylimit': 'true', 'offset': 5, 'page': 1,
             'extensions': 'base',
         })
         found = []
         for item in data.get('pois', []):
+            # Some upstream responses ignore citylimit (e.g. ambiguous city names).
+            if city_key(city) not in {city_key(str(item.get('cityname', ''))), city_key(str(item.get('adname', '')))}:
+                continue
             raw = item.get('location', '')
             if not raw or ',' not in raw:
                 continue
@@ -63,9 +78,9 @@ class Amap:
             found.append({
                 'id': item['id'], 'name': item['name'], 'location': [lon, lat],
                 'address': item.get('address') if isinstance(item.get('address'), str) else '',
-                'city': item.get('cityname', ''), 'district': item.get('adname', ''),
+                'city': city, 'district': item.get('adname', ''),
             })
-        self.places[keywords] = found
+        self.places[cache_key] = found
         return found
 
     async def resolve(self, stop):
@@ -75,18 +90,25 @@ class Amap:
         stop.address = ''
         stop.matched_name = ''
         stop.opening_hours_status = 'unknown'
+        try:
+            stop.city = self.canonical_city(stop.city)
+        except ValueError:
+            stop.poi_id = ''
+            stop.location_note = '城市缺失或不在本次目的地列表中，无法核验地点'
+            return
         if stop.kind == 'break':
             stop.poi_id = ''
             stop.location_note = '自由活动，不绑定具体地点'
             return
-        candidates = [p for group in self.places.values() for p in group if p['id'] == stop.poi_id] if stop.poi_id else []
+        candidates = [p for group in self.places.values() for p in group
+                      if p['id'] == stop.poi_id and city_key(p['city']) == city_key(stop.city)] if stop.poi_id else []
         if not candidates:
-            candidates = await self.search(stop.name)
+            candidates = await self.search(stop.name, stop.city)
         candidates = [p for p in candidates if stop.name in p['name'] or p['name'] in stop.name
                       or SequenceMatcher(None, stop.name, p['name']).ratio() >= .6]
         if not candidates:
             stop.poi_id = ''
-            stop.location_note = '在目的地城市内没有找到足够匹配的地点，请核对名称'
+            stop.location_note = f'在{stop.city}内没有找到足够匹配的地点，请核对名称'
             return
         place = candidates[0]
         stop.poi_id = place['id']
@@ -137,11 +159,14 @@ class Amap:
                 except RuntimeError as error:
                     stop.location_note = str(error)
                 if self.emit:
-                    await self.emit('tool', {'name': '核对地点', 'arguments': {'city': self.city, 'name': stop.name},
+                    await self.emit('tool', {'name': '核对地点', 'arguments': {'city': stop.city, 'name': stop.name},
                                             'summary': stop.matched_name or stop.location_note})
             for previous, current in zip(day.stops, day.stops[1:]):
                 leg = RouteLeg(day_index=day_index, from_id=previous.id, to_id=current.id, mode=mode,
                                queried_at=datetime.now(timezone.utc), note='地点未定位，无法计算路线')
+                if previous.city and current.city and city_key(previous.city) != city_key(current.city):
+                    routes.append(leg.model_copy(update={'scope': 'intercity', 'note': '跨城移动，详见跨城交通；不绘制市内导航路线'}))
+                    continue
                 if previous.location and current.location:
                     try:
                         result = await self.route(previous.location, current.location, mode)

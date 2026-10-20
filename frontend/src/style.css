@@ -16,3 +16,33 @@ footer{display:flex;align-items:center;gap:22px;border-top:1px solid var(--line)
 
 /* Keep the restrained palette, with readable contrast for functional content. */
 .hero-copy>p{color:#657969}.field>span{font-size:12px}.input-wrap input{font-size:13px}.field textarea{font-size:12px}.form-note{color:#788875;font-size:10px}.stop-body h4{font-size:14px}.stop-body p{font-size:11px;color:#677a61}.stop-meta>span:first-child{font-size:10px;color:#6d815f}.kind-tag{font-size:9px}.poi-note{font-size:9px;color:#6b855b}.poi-note.unknown{color:#977944}.stop-address{font-size:9px;color:#7c8c6c}.transfer{font-size:9px;color:#72865c}.plan-heading p{font-size:12px;color:#667961}.mini-heading h3{font-size:13px}.cost-list>div{font-size:11px}.cost-list span{color:#758762}.cost-list strong{color:#5f7950}.validation-status strong{font-size:11px}.validation-status p{font-size:10px;color:#7b9166}.issues-list{font-size:10px;color:#94774d}.unknown-list{font-size:10px;color:#7c8e67}.subtle-note,.map-footnote{color:#81936d;font-size:9px}.map-pin>span{display:block;transform:rotate(45deg)}
+
+/* Nationwide journey controls and estimated intercity transport. */
+.field-hint{display:block;font-size:10px;color:#788875;line-height:1.8;margin-top:6px}
+.input-wrap select{width:100%;min-width:0;border:0;background:transparent;color:inherit;padding:12px 0;font-size:12px;outline-offset:3px}
+.journey-options{display:flex;flex-direction:column;gap:10px;margin:-3px 0 20px;font-size:11px;color:#657969;grid-column:1/-1}
+.journey-options label{display:flex;align-items:center;gap:7px}.journey-options input{accent-color:var(--green)}
+.intercity-card{padding:20px;margin-bottom:18px}.intercity-intro{font-size:11px;color:#758762;line-height:1.9;margin-top:10px}
+.intercity-leg{padding:14px 0;border-top:1px solid var(--line);margin-top:12px}.intercity-leg:last-child{padding-bottom:0}
+.intercity-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.intercity-heading strong{display:flex;align-items:center;gap:9px;font-size:13px;color:#44664c}.intercity-heading>span{font-size:10px;color:#94774d}
+.intercity-times{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;color:#677a61;margin-top:10px}
+.intercity-price{font-size:12px;color:#42694b;margin-top:9px;line-height:1.9}.intercity-price span{display:block;font-size:10px;color:#81936d}
+.stop-city{display:inline-block;font-size:10px;color:var(--green);margin-right:7px;font-weight:400}
+.map-city-tabs{display:flex;gap:6px;padding:0 14px 12px;overflow:auto}.map-city-tabs button{font-size:11px;white-space:nowrap;padding:6px 10px;border-radius:6px;background:#f0f4e8;color:#657969}.map-city-tabs button.active{background:var(--green);color:#fff}
+@media(max-width:520px){.intercity-card{padding:18px 16px}.intercity-times{font-size:10px;gap:6px}.journey-options{font-size:12px}}
+
+/* Ordered city inputs keep each city's duration attached when reordered. */
+.destination-editor{grid-column:1/-1;margin-bottom:20px;min-width:0}
+.destination-heading{display:flex;align-items:center;justify-content:space-between;font-size:12px;gap:10px}.destination-heading b{color:#b2935f}.destination-heading small{font-size:10px;color:#788875}
+.destination-help{font-size:10px;line-height:1.8;color:#788875;margin-top:7px}
+.destination-row{margin-top:12px;border:1px solid #e3e9dc;border-radius:10px;padding:10px;background:#fcfdf9;min-width:0}
+.destination-row-title{display:flex;align-items:center;justify-content:space-between;font-size:10px;color:#6d815f;margin-bottom:8px}
+.destination-actions{display:flex;gap:2px}.destination-actions button{padding:5px;display:grid;place-items:center;border-radius:5px;color:#6d815f}.destination-actions button:hover:not(:disabled){background:#e8efe0}
+.destination-inputs{display:grid;grid-template-columns:minmax(0,1fr) 92px;gap:8px;align-items:end}.city-input-cell{position:relative;min-width:0}.destination-inputs .input-wrap{padding-left:9px;padding-right:8px}.destination-inputs .input-wrap input{font-size:12px;padding-top:11px;padding-bottom:11px;width:100%}
+.stay-select{min-width:0;display:flex;flex-direction:column;gap:5px}.stay-select>span{font-size:9px;color:#788875}.stay-select select{width:100%;min-width:0;padding:10px 4px;border:1px solid #e3e9dc;border-radius:8px;background:#fff;color:#48684f;font-size:11px;height:41px}
+.add-destination{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:10px;border:1px dashed #becfb2;border-radius:8px;margin-top:11px;color:#537746;font-size:11px}
+.destination-limit,.stay-budget-note{font-size:10px;line-height:1.8;color:#94673e;margin:8px 0 15px;grid-column:1/-1}
+.city-suggestions{position:absolute;z-index:60;left:0;top:100%;width:max-content;min-width:100%;max-width:270px;list-style:none;padding:4px;margin:5px 0 0;background:#fff;border:1px solid #dce6d2;border-radius:8px;box-shadow:0 8px 24px #29412722;max-height:240px;overflow:auto}
+.city-suggestions button{display:flex;gap:10px;align-items:center;justify-content:space-between;text-align:left;width:100%;padding:9px;font-size:12px}.city-suggestions button:hover,.city-suggestions button:focus-visible{background:#f1f6e9}.city-suggestions small{font-size:9px;color:#788875}
+@media(max-width:520px){.destination-actions button{padding:7px}.destination-inputs{grid-template-columns:minmax(0,1fr) 104px}.destination-inputs .input-wrap input{font-size:13px}.stay-select select{font-size:12px}.destination-help{font-size:10px}.city-suggestions{max-width:230px}}

@@ -42,6 +42,7 @@ if (-not (Test-Path -LiteralPath .env.local)) { Copy-Item .env.example .env.loca
 | `AMAP_JS_SEC` | 上述 Web 端 Key 对应的安全密钥 | 浏览器地图代理鉴权 |
 | `VALIDATOR_BACKEND` | 首次可填 `python`；启用可选仓颉后用 `auto` | 规则检查，不需要模型 Key |
 | `PORT` | 默认 `7862` | 后端与生产页面端口 |
+| `RAIL_MCP_ENABLED` / `RAIL_MCP_PYTHON` | 默认关闭；独立安装后启用，解释器路径可留空 | 可选铁路查询，见 [RAIL_MCP.md](RAIL_MCP.md) |
 
 两个高德 Key 的平台和密钥类型不要混用。高德控制台若启用了额外限制，须与本机使用方式匹配。完整配置解释见 [CONFIGURATION.md](CONFIGURATION.md)。不要把真实值贴进共享文档、Git 或截图。
 
@@ -124,6 +125,12 @@ npm.cmd run build
 下载器获取并校验官方 Windows x64 SDK（约 284 MB），放在忽略的 `cangjie/.sdk`；编译产物在 `cangjie/bin`。PowerShell 如拦截脚本，可用 `powershell -NoProfile -ExecutionPolicy Bypass -File .\cangjie\build.ps1`，不必修改全局策略。
 
 将 `VALIDATOR_BACKEND=auto` 后重启，查看健康接口的 `capabilities.validator` 与 `validator_diagnostic`。一致性通过应显示 `cangjie`，否则自动用 Python。下载的是编译 SDK，**不是 AI 模型权重**。
+
+## 可选铁路查询
+
+主安装不会下载 12306 MCP。需要真实直达车次、席位快照和公布参考票价时，按 [RAIL_MCP.md](RAIL_MCP.md) 用 uv 在独立虚拟环境安装固定版本，并开启 RAIL_MCP_ENABLED。无需新的铁路 Key 或账号，未安装时保留交通估算；主应用现有依赖不变。
+
+表单先填写出发城市，再添加目的地。每城默认 1 天、可按半天调整，合计向上取整且最多 10 天，无需另填总天数；可勾选返程。市内方式控件暂时隐藏，新建默认步行。
 
 ## 7. 常见问题
 

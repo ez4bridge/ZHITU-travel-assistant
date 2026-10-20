@@ -7,7 +7,8 @@ from datetime import timedelta
 from pathlib import Path
 
 from .config import ROOT, settings
-from .models import Issue, ValidationReport, cents
+from .models import Issue, ValidationReport, cents, city_key, itinerary_expenses
+from .journey import normalized_journey, validate_journey
 
 
 def minutes(time):
@@ -21,26 +22,25 @@ def issue(code, message, day_index=None, stop_id=None):
 
 def normalized_input(request, itinerary, routes):
     errors, warnings, unknowns = [], [], []
-    total = 0
+    total = sum(cents(cost.unit_cost) * cost.quantity * (request.people if cost.basis == 'person' else 1)
+                for cost in itinerary_expenses(itinerary))
     if len(itinerary.days) != request.days:
         errors.append(issue('day_count', f'需要 {request.days} 天，方案包含 {len(itinerary.days)} 天'))
     for index, day in enumerate(itinerary.days):
         if day.date != request.start_date + timedelta(days=index):
             errors.append(issue('date_mismatch', '行程日期与出发日期不一致', index))
-        if index == 0 and minutes(day.stops[0].start) < minutes(request.start_time):
+        if index == 0 and day.stops and minutes(day.stops[0].start) < minutes(request.start_time):
             errors.append(issue('before_start', '首个活动早于设定的出发时间', index, day.stops[0].id))
-        for cost in day.expenses:
-            total += cents(cost.unit_cost) * cost.quantity * (request.people if cost.basis == 'person' else 1)
         if not day.expenses:
             warnings.append(issue('missing_cost', '这一天没有费用明细，无法完整核对预算', index))
         for stop in day.stops:
             if stop.kind != 'break':
                 unknowns.append(issue('opening_hours', f'{stop.name}：营业时间、预约要求未验证', index, stop.id))
     unknowns.insert(0, issue('estimated_prices', '门票、餐饮、住宿和交通费用均为估算，未查询实时价格'))
-    return {
+    data = {
         'budget_cents': cents(request.budget), 'total_cents': total,
         'pre_errors': errors, 'pre_warnings': warnings, 'unknowns': unknowns,
-        'days': [{'stops': [{'id': stop.id, 'name': stop.name, 'identity': stop.poi_id or stop.name,
+        'days': [{'stops': [{'id': stop.id, 'name': stop.name, 'identity': stop.poi_id or f'{city_key(stop.city)}:{stop.name}',
                             'start_min': minutes(stop.start), 'end_min': minutes(stop.end),
                             'poi_ok': bool(stop.location and stop.location_status == 'verified'),
                             'needs_poi': stop.kind != 'break', 'check_duplicate': stop.kind == 'sight'} for stop in day.stops]} for day in itinerary.days],
@@ -48,12 +48,28 @@ def normalized_input(request, itinerary, routes):
                   'available': r.available and r.duration_s is not None,
                   'duration_min': math.ceil((r.duration_s or 0) / 60)} for r in routes],
     }
+    # Preserve one leg per adjacent pair, including an explicitly non-local boundary.
+    for index, day in enumerate(itinerary.days):
+        for before, after in zip(day.stops, day.stops[1:]):
+            if before.city and after.city and city_key(before.city) != city_key(after.city):
+                data['legs'] = [leg for leg in data['legs'] if (leg['day_index'], leg['from_id'], leg['to_id']) != (index, before.id, after.id)]
+                data['legs'].append({'day_index': index, 'from_id': before.id, 'to_id': after.id,
+                                     'available': False, 'duration_min': 0, 'intercity': True})
+    journey = normalized_journey(request, itinerary)
+    if journey is not None:
+        data['journey'] = journey
+    return data
 
 
 def validate_core(data):
     errors = list(data.get('pre_errors', []))
     warnings = list(data.get('pre_warnings', []))
     unknowns = list(data.get('unknowns', []))
+    if data.get('journey'):
+        journey_errors, journey_warnings, journey_unknowns = validate_journey(data['journey'])
+        errors.extend(journey_errors)
+        warnings.extend(journey_warnings)
+        unknowns.extend(journey_unknowns)
     if data['total_cents'] > data['budget_cents']:
         errors.append(issue('over_budget', '估算总费用超过全员预算'))
     seen = set()
@@ -73,6 +89,8 @@ def validate_core(data):
                 unknowns.append(issue('missing_location', '地点未定位，路线和通行时间无法验证', index, stop['id']))
         for before, after in zip(stops, stops[1:]):
             leg = next((r for r in data['legs'] if r['day_index'] == index and r['from_id'] == before['id'] and r['to_id'] == after['id']), None)
+            if leg and leg.get('intercity'):
+                continue
             if not leg or not leg['available']:
                 unknowns.append(issue('missing_route', '相邻地点没有可用的真实路线', index, after['id']))
             elif after['start_min'] - before['end_min'] < leg['duration_min']:

@@ -25,3 +25,8 @@
 Python、FastAPI、Uvicorn、HTTPX、Pydantic、LangGraph、OpenAI 兼容客户端、Vue、Vite、TypeScript、Lucide 及仓颉 SDK 分别遵循各自许可证。完整版本以 Python／npm 锁文件为准。
 
 地图与地点由高德在线服务提供，模型由配置的 DeepSeek 接口提供；使用时遵循各自账号服务条件。本项目的视觉参考仅用于设计方向，没有复制先前展示的旅行网站页面或商业图片。
+
+
+## 可选铁路服务
+
+[drfccv/mcp-server-12306](https://github.com/drfccv/mcp-server-12306)，MIT，Copyright (c) 2026 drfccv。安装固定提交 f6865c077cfd51eb90021cc75aff33fad75ac3d5（0.5.0.post20260930），保留上游 LICENSE。源码通过 Git 安装在本机忽略目录；本仓库不重新分发供应商依赖。项目使用独立 stdio 适配和 TLS／车站城市元数据启动包装器，未复制第三方服务器源码。该项目为社区实现，不是官方发布的 MCP。铁路公布票价仅作参考，不提供预订。

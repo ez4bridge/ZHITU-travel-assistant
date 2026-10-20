@@ -20,6 +20,11 @@ class Json {
         throw Exception("missing JSON field")
     }
 
+    public func has(key: String): Bool {
+        for (name in keys) { if (name == key) { return true } }
+        return false
+    }
+
     public func put(key: String, value: Json): Unit {
         keys.add(key)
         items.add(value)
@@ -205,10 +210,82 @@ func issue(code: String, message: String, day: Int64, stop: String): Json {
     return result
 }
 
+// Journey timestamps are absolute integer minutes from the first travel midnight.
+// The optional object keeps existing single-city fixtures and saved plans valid.
+func halfDays(halves: Int64): String {
+    return (halves / 2).toString() + if (halves % 2 == 0) { "" } else { ".5" }
+}
+
+func validateJourney(journey: Json, errors: Json, warnings: Json, unknowns: Json): Unit {
+    let cities = journey.get("cities").items
+    let destinations = journey.get("destinations").items
+    let transfers = journey.get("transfers").items
+    let stops = journey.get("stops").items
+    var routeOk = transfers.size == cities.size - 1
+    if (routeOk) {
+        for (i in 0..transfers.size) {
+            if (transfers[i].get("from_city").text != cities[i].text || transfers[i].get("to_city").text != cities[i + 1].text) {
+                routeOk = false
+            }
+        }
+    }
+    if (!routeOk) { errors.items.add(issue("intercity_route", "跨城交通必须按顺序连接出发地、全部目的地及所选返程", -1, "")) }
+    let visited = ArrayList<String>()
+    for (stop in stops) {
+        let city = stop.get("city").text
+        if (visited.size == 0 || visited[visited.size - 1] != city) { visited.add(city) }
+    }
+    var visitsOk = visited.size == destinations.size
+    if (visitsOk) {
+        for (i in 0..visited.size) { if (visited[i] != destinations[i].text) { visitsOk = false } }
+    }
+    if (!visitsOk) { errors.items.add(issue("city_sequence", "每日活动必须按目的地顺序覆盖全部城市，且注明所属城市", -1, "")) }
+    if (journey.has("stays")) {
+        for (stay in journey.get("stays").items) {
+            let expected = stay.get("expected_halves").number
+            let actual = stay.get("actual_halves").number
+            if (expected != actual) {
+                warnings.items.add(issue("stay_preference", stay.get("city").text + "：期望游玩 " + halfDays(expected) + " 天，当前约 " + halfDays(actual) + " 天，请调整城市时长或总天数", -1, ""))
+            }
+        }
+    }
+    var previousEnd = journey.get("start_min").number
+    for (transfer in transfers) {
+        let day = transfer.get("day_index").number
+        let start = transfer.get("start_min").number
+        let end = transfer.get("end_min").number
+        if (end <= start) { errors.items.add(issue("intercity_duration", "跨城交通到达时间必须晚于出发时间", day, "")) }
+        if (start < journey.get("start_min").number || end >= journey.get("end_min").number) {
+            errors.items.add(issue("intercity_dates", "跨城交通必须安排在所选旅行日期与首日开始时间内", day, ""))
+        }
+        if (start < previousEnd) { errors.items.add(issue("intercity_overlap", "跨城交通时间重叠或早于上一段到达时间", day, "")) }
+        previousEnd = end
+    }
+    for (stop in stops) {
+        var city = cities[0].text
+        var overlap = false
+        for (transfer in transfers) {
+            if (transfer.get("start_min").number < stop.get("end_min").number && transfer.get("end_min").number > stop.get("start_min").number) { overlap = true }
+            if (transfer.get("end_min").number <= stop.get("start_min").number) { city = transfer.get("to_city").text }
+        }
+        let day = stop.get("day_index").number
+        let id = stop.get("id").text
+        if (overlap) {
+            errors.items.add(issue("intercity_activity_overlap", "活动时间与跨城交通重叠，请预留进出站或机场接驳时间", day, id))
+        } else if (city != stop.get("city").text) {
+            errors.items.add(issue("city_arrival", "活动所在城市与交通到达安排不一致", day, id))
+        }
+    }
+    if (cities.size > 1 || transfers.size > 0) {
+        unknowns.items.add(issue("intercity_estimates", "跨城车票未预订；票价、余票和进出站接驳请在出行前确认", -1, ""))
+    }
+}
+
 func validate(input: Json): Json {
     let errors = input.get("pre_errors")
     let warnings = input.get("pre_warnings")
     let unknowns = input.get("unknowns")
+    if (input.has("journey")) { validateJourney(input.get("journey"), errors, warnings, unknowns) }
     if (input.get("total_cents").number > input.get("budget_cents").number) {
         errors.items.add(issue("over_budget", "估算总费用超过全员预算", -1, ""))
     }
@@ -244,6 +321,7 @@ func validate(input: Json): Json {
             for (leg in legs) {
                 if (leg.get("day_index").number == dayIndex && leg.get("from_id").text == before.get("id").text && leg.get("to_id").text == after.get("id").text) {
                     found = true
+                    if (leg.has("intercity") && leg.get("intercity").flag) { break }
                     if (!leg.get("available").flag) {
                         unknowns.items.add(issue("missing_route", "相邻地点没有可用的真实路线", dayIndex, after.get("id").text))
                     } else if (after.get("start_min").number - before.get("end_min").number < leg.get("duration_min").number) {
