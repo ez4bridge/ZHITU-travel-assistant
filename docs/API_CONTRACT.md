@@ -154,3 +154,5 @@ CityTransfer 新字段均有默认值，旧 SQLite 记录继续可读：
 ## 表单简化与天数自动汇总
 
 新表单不再填写旅行总天数；每个目的地 preferred_days 默认 1，可按半天选择，提交时不发送 days。若请求未显式提供 days 且 destinations 的时长均非 null，服务端按 Decimal 求和后向上取整得到 days，仍限制 1–10 天（如 1.5+1=3，0.5+0.5=1）。响应和存储继续包含 days，供日期、预算和校验使用。显式 days 的旧 API／历史记录保持原语义；旧自动分配项在表单重新规划时默认显示 1 天，不回写原记录。返程勾选及对应 return_to_origin 协议保留。市内出行控件仅从界面隐藏，mode 协议继续支持 walking/driving；新建默认 walking，历史记录仍保留原 mode。
+
+铁路服务源码随仓库收录于 third_party/mcp-server-12306，独立解释器默认路径调整为 .tools/rail-mcp/.venv 下的平台 Python；显式 RAIL_MCP_PYTHON 继续优先。新配置模板启用铁路，原有配置不覆盖。HTTP 与 SSE 字段不变。

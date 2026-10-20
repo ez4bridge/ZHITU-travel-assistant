@@ -1,0 +1,101 @@
+[build-system]
+requires = ["hatchling", "hatch-fancy-pypi-readme"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-server-12306"
+version = "0.5.0.post20260930"
+description = "MCP服务器用于12306车票查询"
+authors = [
+    {name = "Drfccv", email = "2713587802@qq.com"}
+]
+license = "MIT"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Communications :: Chat",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dynamic = ["readme"]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "httpx2>=2.5.0",
+    "pydantic-settings>=2.15.0",
+    "mcp>=2.0.0,<3",
+    "aiofiles>=25.1.0",
+    "pytz>=2026.3",
+]
+
+[project.optional-dependencies]
+# Streamable HTTP 传输依赖（starlette / uvicorn / python-multipart）均由 mcp 传递提供，无需显式声明
+
+[dependency-groups]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.9.0",
+    "isort>=5.12.0",
+    "mypy>=1.6.0",
+    "types-aiofiles>=24.1.0",
+    "types-pytz>=2024.1.0",
+    "pre-commit>=3.5.0",
+    "build>=1.5.0",
+    "twine>=7.0.0",
+]
+
+[tool.uv]
+# 配置多个镜像源
+[[tool.uv.index]]
+name = "tsinghua"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+
+[[tool.uv.index]]
+name = "aliyun"
+url = "https://mirrors.aliyun.com/pypi/simple/"
+
+[project.scripts]
+mcp-server-12306 = "mcp_12306.stdio_server:main"
+mcp-12306 = "mcp_12306.http_server:main"
+
+[tool.black]
+line-length = 88
+target-version = ['py310']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_12306"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/mcp_12306/resources/station_name.js" = "mcp_12306/resources/station_name.js"
+
+[tool.hatch.build.targets.sdist.force-include]
+"src/mcp_12306/resources/station_name.js" = "src/mcp_12306/resources/station_name.js"
+
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+path = "README.md"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+text = "\n\nmcp-name: io.github.drfccv/mcp-server-12306"

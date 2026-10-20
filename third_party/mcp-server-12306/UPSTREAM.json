@@ -1,0 +1,40 @@
+{
+  "repository": "https://github.com/drfccv/mcp-server-12306",
+  "commit": "f6865c077cfd51eb90021cc75aff33fad75ac3d5",
+  "version": "0.5.0.post20260930",
+  "license": "MIT",
+  "modified_files": [],
+  "files_sha256": {
+    ".dockerignore": "c5b064a96f2469c5271a810cb4e4e4c37a0989aa706a694390da09070fa99b19",
+    ".env.example": "dbf7800c32c842491aab8211c9c3129e9d36363ebdd5e6002d208caf15aa7562",
+    "Dockerfile": "4098e224edfe1e8ce17d2338d96a30850b9281d28d75f328a681481e497a3f32",
+    "LICENSE": "c4974fb52c446f709bbdcbbde7483c03b65f1635597969a1992571e0dc608407",
+    "MANIFEST.in": "e99bbb446e6f9c73827eb24995c1920c1d67814a406a97f8df1e219c9ad165e3",
+    "README.md": "77aecb98a3c1fbf66c832daa98716724454dce8aac74e5ff694cdcc9a42e50cc",
+    "docs/get_current_time.md": "0f75830ab54ed0b5f464f40cd0e81e6a707f9e673b36ca7e0b7624647c4f531a",
+    "docs/get_train_route_stations.md": "d422ad0ef6d8ed8ece9515c7816efd8a8d4e45549d5f66852408c77c3736dda2",
+    "docs/query_ticket_price.md": "ecbdbdba6141aa336b6b477a8c95fe9fb511af87fbf8063f8b9c31246d19013e",
+    "docs/query_tickets.md": "42c2bf22697ec0ce57aa7cea5c5e4f4d3c932fa81aa3d356de1bbd19eca26c93",
+    "docs/query_transfer.md": "b8be9b6ffc288d42db8e0cb3c7b3db5f1e8ad0905a8d4f602b40fde06b17b16d",
+    "docs/search_stations.md": "dc1f089fdeb01375b5d16926d1bfe4d7eae5a97aa17f1f6af5616e8e59fe5c60",
+    "pyproject.toml": "5b8ffe1f2fa4961602ca1cc3562b3bad33399857a67c9445af35b5113ec1cfaa",
+    "scripts/start_server.py": "a88c8a159e011320d2ce3cd7abf8a87de3c0f6ce74f2d0b5f8789c7a754aeb62",
+    "scripts/update_stations.py": "bc420c0d97912cf53ec5cc1ee78087dc7bfe97ac48cf5f8e38e18ee64859b8ef",
+    "server.json": "37c3558096d7b0ba384d8488ad5c08df6ebf7f7273b44616e89a9147725655c7",
+    "src/mcp_12306/__init__.py": "59651e16bebcbc2e3317046794ccd851fc8812a9f1e72c8e9a82ad341433571e",
+    "src/mcp_12306/http_server.py": "cb207e31ad68447270e8cdf90e9591b90702f4281db94fc175e5978e83689154",
+    "src/mcp_12306/resources/station_name.js": "f337735733c403306cd14b012df40bc01cbbcdb4230e5bbfd08eb1be523d0524",
+    "src/mcp_12306/server.py": "163f610ed2cbfad1815aaa976657cf7efe21339222f451efaba5db6253ad7463",
+    "src/mcp_12306/services/__init__.py": "7b085c9e81d78ddccea435169755ee1627efb4c060b84c62d5acf253645c6b99",
+    "src/mcp_12306/services/station_service.py": "21151b8362c05c8b83ae91347d9b969a54d4b95688053f0581736bfe5de97e26",
+    "src/mcp_12306/services/ticket_service.py": "4ac894d9b7d27570e38958094a29f756da03d363d6c58a5a070b2c3be0b3da26",
+    "src/mcp_12306/stdio_server.py": "411856fe8d807f1b7b7fa119582b5e02746b518b0b418b782a1df7a6420212cb",
+    "src/mcp_12306/utils/__init__.py": "9d513eb4b509d049a039202536500af1f8635c42ab6a69ff8cfff7973930c45a",
+    "src/mcp_12306/utils/config.py": "edb214a7479d8494c0cdf4f3b4af66ad4f6d82adcda43ca3907e8517cdbbd283",
+    "src/mcp_12306/utils/date_utils.py": "51245ea9db19aa9352acd850a70d9e71fcaa692a67b9a4b63f37917d79424ff3",
+    "uv.lock": "6a91a9319e6cea241086cc0c189f4bac07a2b7a493e9f7edfb023bacc8082beb"
+  },
+  "excluded_files": [
+    ".gitignore"
+  ]
+}

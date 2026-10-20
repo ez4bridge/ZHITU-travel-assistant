@@ -12,7 +12,7 @@
 | 浏览器底图和路线展示 | `AMAP_WEB_KEY` | 高德 Web 端 JS API Key，作为公开客户端标识使用 |
 | JS API 鉴权 | `AMAP_JS_SEC` | Web 端安全密钥，仅在服务器代理中注入 `jscode` |
 | 校验模块选择 | `VALIDATOR_BACKEND=auto` 或 `python` | 自动启用经一致性测试的仓颉模块，或只使用 Python |
-| 可选铁路查询 | `RAIL_MCP_ENABLED=false`、`RAIL_MCP_PYTHON` | 默认关闭，安装及启用见 [铁路接入](RAIL_MCP.md)；不需要新 API Key |
+| 可选铁路查询 | `RAIL_MCP_ENABLED=true`、`RAIL_MCP_PYTHON` | 新模板默认开启，现有配置保留；setup 自动安装自带源码的独立依赖，见 [铁路接入](RAIL_MCP.md)；不需要新 API Key |
 | 本地端口 | `PORT=7862` | 默认为本机 7862，修改后按新地址访问；前端开发代理也需要相应调整 |
 
 模型供应商采用 OpenAI 兼容的 Chat Completions 接口。换供应商时应验证其支持工具调用、JSON 输出和当前模型名；DeepSeek 的额外参数只对 DeepSeek 主机附加。首版已经验证的供应商是 DeepSeek，不把其他接口兼容性当作已测试。

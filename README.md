@@ -25,7 +25,7 @@ cd travel-assistant
 .\setup.bat
 ```
 
-私有仓库需要先接受队友邀请，并使用有权限的 GitHub 账号认证。安装脚本创建项目 `.venv`，安装锁定依赖，下载并校验项目独立 Node 22，构建前端；不改系统 Node 或全局仓颉环境。
+私有仓库需要先接受队友邀请，并使用有权限的 GitHub 账号认证。安装脚本创建项目 `.venv`，安装锁定依赖，下载并校验项目独立 Node 22，构建前端，并为仓库自带的铁路 MCP 安装独立依赖；不改系统 Node 或全局仓颉环境。
 
 在 `.env.local` 中填写模型与高德设置。安装脚本不会覆盖已有配置；手动创建时也先检查文件是否存在：
 
@@ -36,7 +36,7 @@ if (-not (Test-Path -LiteralPath .env.local)) { Copy-Item .env.example .env.loca
 
 打开 [http://127.0.0.1:7862/](http://127.0.0.1:7862/)，保持启动窗口运行。修改配置后重新启动；关闭时 Ctrl+C 或执行 `stop.bat`。完整步骤见 [运行与开发教程](docs/GETTING_STARTED.md)。
 
-新 clone 不包含密钥、依赖环境、铁路服务安装目录或本机历史数据库。模型和高德配置见 [CONFIGURATION.md](docs/CONFIGURATION.md)；实际密钥仅放被 Git 忽略的 `.env.local`。
+新 clone 包含 third_party 中的铁路 MCP 源码、车站数据和许可证；不包含密钥、已安装的依赖环境或本机历史数据库。模型和高德配置见 [CONFIGURATION.md](docs/CONFIGURATION.md)；实际密钥仅放被 Git 忽略的 `.env.local`。
 
 ## 使用流程
 
@@ -49,11 +49,13 @@ if (-not (Test-Path -LiteralPath .env.local)) { Copy-Item .env.example .env.loca
 
 ## 可选 12306 铁路查询
 
-使用 [drfccv/mcp-server-12306](https://github.com/drfccv/mcp-server-12306) 社区实现，固定上游提交，安装在独立虚拟环境中，不加入主应用依赖。`setup.bat` 不会自动安装该服务；需另行准备 uv、Git 和 Python 3.10–3.13。
+使用 [drfccv/mcp-server-12306](https://github.com/drfccv/mcp-server-12306) 社区实现，固定版本源码、车站数据、MIT 许可证及上游锁文件已收录在 `third_party/mcp-server-12306/`。拉取本项目即可取得源码，无需另行克隆上游仓库，也不需要 uv。
 
-安装后在 `.env.local` 设置 `RAIL_MCP_ENABLED=true` 并重启；`RAIL_MCP_PYTHON` 留空时使用项目约定的独立解释器。无需额外铁路 API Key 或 12306 账号。默认关闭，未安装时仍可生成估算交通。
+默认 `setup.bat` 会调用 `tools/setup_rail_mcp.py`，将哈希锁定的运行依赖安装至 `.tools/rail-mcp/.venv`；主应用依赖保持隔离。需要联网下载的是 Python 依赖包，源码已随仓库提供。当前安装器支持 Python 3.11–3.13；可用 `setup.ps1 -SkipRailMcp` 跳过可选依赖。
 
-安装、启停及单独测试命令见 [铁路接入说明](docs/RAIL_MCP.md)。查询限当前预售期，数据取决于上游可用性。一次完整规划还包含多轮模型和高德调用，铁路单次测速不能代表整份行程生成耗时。
+新配置模板默认设置 `RAIL_MCP_ENABLED=true`；现有 `.env.local` 不覆盖，原来关闭的用户可自行改为 true 并重启。`RAIL_MCP_PYTHON` 留空时使用项目约定的独立解释器。无需额外铁路 API Key 或 12306 账号。可设置 false 关闭，依赖未安装或查询失败时仍可生成估算交通。
+
+仅重装铁路依赖可运行 `python tools/setup_rail_mcp.py`。安装、启停及单独测试命令见 [铁路接入说明](docs/RAIL_MCP.md)。查询限当前预售期，数据取决于上游可用性。一次完整规划还包含多轮模型和高德调用，铁路单次测速不能代表整份行程生成耗时。
 
 ## 仓颉校验与回退
 
@@ -82,7 +84,7 @@ npm.cmd --prefix frontend run build
 
 生产页面使用构建产物，更新 Vue 后需要重新 build。开发热更新、依赖安装和端口说明见 [开发教程](docs/GETTING_STARTED.md)。Linux 本地验证使用 `.venv/bin/python` 和项目独立 Node，不使用 Windows 脚本。
 
-最近验证（2026-10-20）：88 项 pytest 通过、1 项原生仓颉测试跳过；前端类型检查与生产构建通过。1440px／390px 页面检查通过表单顺序、返程、各城天数提交和历史重新规划，无脚本错误及横向溢出；该页面检查使用模拟生成并屏蔽底图请求。真实铁路查询及此前完整生成的条件和限制见 [当前状态](docs/PROJECT_STATUS.md)。
+最近验证（2026-10-20）：94 项 pytest 通过、1 项原生仓颉测试跳过（含 MCP 源码与安装保护）；前端类型检查与生产构建通过。1440px／390px 页面检查通过表单顺序、返程、各城天数提交和历史重新规划，无脚本错误及横向溢出；该页面检查使用模拟生成并屏蔽底图请求。真实铁路查询及此前完整生成的条件和限制见 [当前状态](docs/PROJECT_STATUS.md)。
 
 日常测试不调用付费模型。`tools/live_check.py` 会调用真实模型和高德，仅在需要且获授权时运行；重新校验已有行程不会刷新路线或铁路快照。
 
@@ -93,7 +95,8 @@ backend/       API、Agent、城市建议、地图、铁路适配、存储与校
 frontend/      Vue 界面、目的地编辑器、交通卡片、地图与流式客户端
 cangjie/       可选仓颉源码、构建脚本与协议样例
 tests/         自动化功能、兼容性与故障测试
-tools/         配置、停止服务、跨语言校验和铁路／真实接口检查
+tools/         配置、停止服务、跨语言校验和铁路依赖安装／接口检查
+third_party/   固定版本的第三方铁路源码、数据、上游锁文件与许可证
 docs/          架构、接口、配置、验收与来源说明
 .runtime/      本机历史、进程记录、诊断与验收产物（忽略）
 .tools/        项目 Node 和可选铁路独立环境（忽略）

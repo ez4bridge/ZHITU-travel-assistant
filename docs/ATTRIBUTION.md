@@ -29,4 +29,4 @@ Python、FastAPI、Uvicorn、HTTPX、Pydantic、LangGraph、OpenAI 兼容客户�
 
 ## 可选铁路服务
 
-[drfccv/mcp-server-12306](https://github.com/drfccv/mcp-server-12306)，MIT，Copyright (c) 2026 drfccv。安装固定提交 f6865c077cfd51eb90021cc75aff33fad75ac3d5（0.5.0.post20260930），保留上游 LICENSE。源码通过 Git 安装在本机忽略目录；本仓库不重新分发供应商依赖。项目使用独立 stdio 适配和 TLS／车站城市元数据启动包装器，未复制第三方服务器源码。该项目为社区实现，不是官方发布的 MCP。铁路公布票价仅作参考，不提供预订。
+[drfccv/mcp-server-12306](https://github.com/drfccv/mcp-server-12306)，MIT，Copyright (c) 2026 drfccv。安装固定提交 f6865c077cfd51eb90021cc75aff33fad75ac3d5（0.5.0.post20260930），保留上游 LICENSE。固定快照源码、车站数据、上游依赖锁文件及完整 MIT LICENSE 收录于 third_party/mcp-server-12306；UPSTREAM.json 记录版本及逐文件哈希。仅排除上游 Git 忽略配置，运行源码保持原样。该目录按上游 MIT 条款分发，其余项目许可证不改变。项目通过独立 stdio 适配和 TLS／车站城市元数据启动包装器调用；运行依赖和虚拟环境在本机安装，不随源码提交。该项目为社区实现，不是官方发布的 MCP。铁路公布票价仅作参考，不提供预订。

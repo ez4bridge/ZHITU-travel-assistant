@@ -1,4 +1,4 @@
-param([string]$Python = 'python', [switch]$Dev, [string]$NodeVersion = '22.23.3')
+param([string]$Python = 'python', [switch]$Dev, [switch]$SkipRailMcp, [string]$NodeVersion = '22.23.3')
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 $env:PYTHONUTF8 = '1'
@@ -44,5 +44,11 @@ try {
     & (Join-Path $nodeHome 'npm.cmd') run build
     if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' }
 } finally { Pop-Location }
+if (-not $SkipRailMcp) {
+    & $pythonPath tools/setup_rail_mcp.py
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning 'Railway dependencies could not be installed. The app can still use transport estimates. Retry: .venv\Scripts\python.exe tools\setup_rail_mcp.py'
+    }
+}
 if (-not (Test-Path -LiteralPath '.env.local')) { Copy-Item -LiteralPath '.env.example' -Destination '.env.local' }
 Write-Host 'Setup complete. Configure .env.local, then run start.bat.'

@@ -42,7 +42,7 @@ if (-not (Test-Path -LiteralPath .env.local)) { Copy-Item .env.example .env.loca
 | `AMAP_JS_SEC` | 上述 Web 端 Key 对应的安全密钥 | 浏览器地图代理鉴权 |
 | `VALIDATOR_BACKEND` | 首次可填 `python`；启用可选仓颉后用 `auto` | 规则检查，不需要模型 Key |
 | `PORT` | 默认 `7862` | 后端与生产页面端口 |
-| `RAIL_MCP_ENABLED` / `RAIL_MCP_PYTHON` | 默认关闭；独立安装后启用，解释器路径可留空 | 可选铁路查询，见 [RAIL_MCP.md](RAIL_MCP.md) |
+| `RAIL_MCP_ENABLED` / `RAIL_MCP_PYTHON` | 新模板开启，现有配置保留；解释器路径可留空 | 可选铁路查询，见 [RAIL_MCP.md](RAIL_MCP.md) |
 
 两个高德 Key 的平台和密钥类型不要混用。高德控制台若启用了额外限制，须与本机使用方式匹配。完整配置解释见 [CONFIGURATION.md](CONFIGURATION.md)。不要把真实值贴进共享文档、Git 或截图。
 
@@ -128,7 +128,7 @@ npm.cmd run build
 
 ## 可选铁路查询
 
-主安装不会下载 12306 MCP。需要真实直达车次、席位快照和公布参考票价时，按 [RAIL_MCP.md](RAIL_MCP.md) 用 uv 在独立虚拟环境安装固定版本，并开启 RAIL_MCP_ENABLED。无需新的铁路 Key 或账号，未安装时保留交通估算；主应用现有依赖不变。
+12306 MCP 的固定版本源码、车站数据和许可证已经在 third_party，拉取本仓库即可取得。setup.bat 默认调用 tools/setup_rail_mcp.py 在独立虚拟环境安装哈希锁定依赖，无需另行克隆或安装 uv。新模板开启 RAIL_MCP_ENABLED，旧配置不覆盖；无需新的铁路 Key 或账号。依赖缺失时保留交通估算，主应用依赖不变。详见 [RAIL_MCP.md](RAIL_MCP.md)。
 
 表单先填写出发城市，再添加目的地。每城默认 1 天、可按半天调整，合计向上取整且最多 10 天，无需另填总天数；可勾选返程。市内方式控件暂时隐藏，新建默认步行。
 

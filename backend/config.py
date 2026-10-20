@@ -23,7 +23,7 @@ class Settings:
         self.validator = os.getenv('VALIDATOR_BACKEND', 'auto')
         self.port = int(os.getenv('PORT', '7862'))
         self.rail_mcp_enabled = os.getenv('RAIL_MCP_ENABLED', 'false').lower() in ('1', 'true', 'yes')
-        default_rail_python = ROOT / '.tools' / 'mcp-server-12306' / '.venv' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+        default_rail_python = ROOT / '.tools' / 'rail-mcp' / '.venv' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
         self.rail_mcp_python = Path(os.getenv('RAIL_MCP_PYTHON', '') or default_rail_python)
         self.runtime = ROOT / '.runtime'
         self.runtime.mkdir(exist_ok=True)

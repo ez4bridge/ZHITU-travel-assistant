@@ -2,26 +2,32 @@
 
 接入社区项目 [drfccv/mcp-server-12306](https://github.com/drfccv/mcp-server-12306)，固定提交 `f6865c077cfd51eb90021cc75aff33fad75ac3d5`，版本 `0.5.0.post20260930`。只查直达班次、实际车站、时刻、席位快照、公布参考票价；不登录、不订票。当前接入不使用其换乘工具，不查询飞机或长途汽车。
 
-## 独立安装
+## 源码随仓库提供
 
-准备 Git、uv 和 Python 3.10–3.13。从旅行助手仓库根目录执行以下命令（PowerShell 和 bash 均可逐行运行）。如果目录已经存在，先检查已有安装，不要覆盖别人的环境。
+上游快照收录在 `third_party/mcp-server-12306/`，包含完整运行源码、车站资源、README、MIT LICENSE、pyproject.toml 和 uv.lock。它是普通仓库文件，不是 Git 子模块，不需要额外执行 git clone。UPSTREAM.json 记录上游提交、每个原始文件的 SHA256 和排除的 Git 忽略配置；原始运行源码未修改，项目差异集中在 tools/rail_mcp_stdio.py。
+
+## 默认安装
+
+使用 Python 3.11–3.13，在 Windows 执行项目 setup.bat；默认会为自带 MCP 安装独立依赖。安装顺序为主应用／前端与铁路依赖，铁路安装失败会明确提示，基础应用仍可使用估算交通。可执行 setup.ps1 -SkipRailMcp 跳过铁路依赖。
+
+只安装／重装铁路依赖，在主应用虚拟环境运行（Windows 也可使用 .venv\Scripts\python.exe）：
 
 ```sh
-git clone https://github.com/drfccv/mcp-server-12306.git .tools/mcp-server-12306
-git -C .tools/mcp-server-12306 checkout --detach f6865c077cfd51eb90021cc75aff33fad75ac3d5
-uv sync --project .tools/mcp-server-12306 --frozen --no-dev
+python tools/setup_rail_mcp.py
 ```
 
-uv 使用上游锁文件安装到 `.tools/mcp-server-12306/.venv`，不向主应用 `.venv` 安装 MCP SDK。保留上游 LICENSE，不提交本机安装目录。
+安装器使用 tools/rail-mcp-requirements.txt 中从上游 uv.lock 导出的固定版本与哈希，创建 `.tools/rail-mcp/.venv`，不向主应用环境安装 MCP 依赖；拒绝把主应用 .venv 作为目标。安装后检查依赖与实际源码路径，确认加载仓库内的文件。无需 uv，也不需要下载另一个 Git 仓库；首次仍需联网下载 Python 依赖包。
 
-在被 Git 忽略的 `.env.local` 中加入：
+新建 `.env.local` 的模板默认是：
 
 ```dotenv
 RAIL_MCP_ENABLED=true
 RAIL_MCP_PYTHON=
 ```
 
-空路径按系统自动使用上面的独立 Python；其他安装位置可显式填写解释器绝对路径。重新启动旅行助手。关闭时将 RAIL_MCP_ENABLED 改为 false 并重启；原有行程历史仍可查看。无需额外 LLM Key、12306 账号或铁路 API Key。
+现有配置一律保留；此前设为 false 的用户需要自行开启并重启。空路径自动使用 `.tools/rail-mcp/.venv` 的解释器；原来显式填写旧解释器路径的，可清空后使用新默认。设置 false 并重启可关闭。无需额外 LLM Key、12306 账号或铁路 API Key。
+
+源码和依赖锁文件进入版本管理，虚拟环境、pip 缓存、真实密钥和运行数据不进入版本管理。来源与 MIT 授权见 [ATTRIBUTION.md](ATTRIBUTION.md)。更新上游时需一起更新快照、UPSTREAM.json 和派生锁文件，并验证协议、安装及车次查询。
 
 ## 单独测试
 

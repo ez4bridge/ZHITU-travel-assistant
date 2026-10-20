@@ -1,6 +1,13 @@
 """Launch the isolated, pinned community MCP with verified TLS and city metadata."""
 import json
 import os
+import sys
+from pathlib import Path
+
+VENDORED_SOURCE = Path(__file__).resolve().parents[1] / 'third_party' / 'mcp-server-12306' / 'src'
+if not (VENDORED_SOURCE / 'mcp_12306' / 'server.py').is_file():
+    raise RuntimeError('仓库内缺少 12306 MCP 源码，请检查 third_party/mcp-server-12306')
+sys.path.insert(0, str(VENDORED_SOURCE))
 
 os.environ['DEBUG'] = 'false'
 os.environ['LOG_LEVEL'] = 'ERROR'
@@ -34,4 +41,8 @@ async def station_search_with_city(arguments):
 server.TOOL_HANDLERS['search-stations'] = station_search_with_city
 
 if __name__ == '__main__':
-    main()
+    if sys.argv[1:] == ['--check-install']:
+        from mcp_12306 import __version__
+        print(json.dumps({'source': str(Path(server.__file__).resolve()), 'version': __version__}))
+    else:
+        main()

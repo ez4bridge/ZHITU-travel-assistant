@@ -4,18 +4,17 @@ from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
-from zoneinfo import ZoneInfo
 
 import pytest
 
 from backend.config import settings
 from backend.models import Itinerary, TripRequest, DayPlan
-from backend.railway import Railway, train_options, reference_price
+from backend.railway import Railway, train_options, reference_price, CHINA_TIMEZONE
 from backend.rail_mcp import RailMcpClient
 
 
 def fixture():
-    day = datetime.now(ZoneInfo('Asia/Shanghai')).date() + timedelta(days=3)
+    day = datetime.now(CHINA_TIMEZONE).date() + timedelta(days=3)
     request = TripRequest(destination='北京→天津', start_date=day, days=2, people=2)
     itinerary = Itinerary(title='双城', summary='测试', days=[
         {'date': day, 'title': '北京', 'stops': []},

@@ -2,12 +2,13 @@
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 from .config import settings
 from .models import TripRequest, Itinerary, city_key
 from .rail_mcp import RailMcpClient
 
+# Current railway queries use China's UTC+8 clock without requiring Windows tzdata.
+CHINA_TIMEZONE = timezone(timedelta(hours=8))
 SOURCE = '12306 / drfccv MCP'
 SEATS = [('second_class', '二等座'), ('hard_seat', '硬座'), ('first_class', '一等座'),
          ('soft_seat', '软座'), ('hard_sleeper', '硬卧'), ('soft_sleeper', '软卧'),
@@ -105,7 +106,7 @@ class Railway:
             raise ValueError('铁路查询必须属于本次城市顺序中的相邻跨城段')
         selected_date = date.fromisoformat(travel_date)
         earliest = time.fromisoformat(earliest_time)
-        today = datetime.now(ZoneInfo('Asia/Shanghai')).date()
+        today = datetime.now(CHINA_TIMEZONE).date()
         if not today <= selected_date <= today + timedelta(days=14):
             return {'status': 'unavailable', 'message': '日期不在当前可查询预售范围内，交通仍为估算', 'options': []}
         if not self.request.start_date <= selected_date < self.request.start_date + timedelta(days=self.request.days):
