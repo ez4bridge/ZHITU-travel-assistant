@@ -10,6 +10,7 @@ import DestinationEditor from './components/DestinationEditor.vue'
 import RouteChoices from './components/RouteChoices.vue'
 import GuideInput from './components/GuideInput.vue'
 import StopFacts from './components/StopFacts.vue'
+import BudgetDetails from './components/BudgetDetails.vue'
 import GuideEvidence from './components/GuideEvidence.vue'
 import { api, stream } from './api'
 import type { TripRequest, DestinationStay, Plan, Health, HistoryItem, ToolEvent, Stop, ValidationReport, Mode, RouteLeg } from './types'
@@ -22,6 +23,7 @@ const form = reactive<Omit<TripRequest, 'days'>>({ origin: '', destination: '', 
   style: 'balanced', budget: 3000, people: 2, mode: 'auto', preferences: '', guides: [], guide_mode: 'prefer', compare_modes: true, confirmed_hotel: '',
   intercity_mode: 'train', include_origin_transport: true, return_to_origin: false })
 const revisionScope = ref('all')
+const budgetOpen = ref(false)
 const health = ref<Health | null>(null), plan = ref<Plan | null>(null), history = ref<HistoryItem[]>([])
 const historyOpen = ref(false), busy = ref(false), progress = ref(''), error = ref(''), tools = ref<ToolEvent[]>([])
 const activeDay = ref(0), selectedStopId = ref(''), revision = ref(''), checking = ref(false), showUnknowns = ref(false)
@@ -139,6 +141,21 @@ async function chooseRoute(route: RouteLeg, mode: Mode) {
   } catch (e) { error.value = e instanceof Error ? e.message : '更换路线失败' }
   finally { busy.value = false }
 }
+async function reconcileCosts() {
+  if (!plan.value || busy.value || checking.value) return
+  busy.value = true; error.value = ''
+  try {
+    plan.value = await api<Plan>(`/api/plans/${plan.value.id}/costs/reconcile`, { method: 'POST' })
+    progress.value = '费用已核对并保存，活动和交通方式保持不变'
+  } catch (e) { error.value = e instanceof Error ? e.message : '核对费用失败' }
+  finally { busy.value = false }
+}
+function reviseBudget() {
+  if (!plan.value || !report.value) return
+  revisionScope.value = 'all'
+  revision.value = `请按全员总预算 ${form.budget} 元重排；当前核对后估算 ${money(report.value.total_cents)} 元。优先减少可选付费项目或更换经济餐馆、交通，说明取舍。不得通过压低同一餐馆参考价或漏算交通住宿凑预算，不能满足时说明差额。`
+  run(true)
+}
 async function deleteHistory() {
   if (!plan.value || busy.value) return
   try {
@@ -227,7 +244,7 @@ function followGuides() {
                     <button :id="stop.id" class="stop-card" :class="{ active: selectedStopId === stop.id }" @click="selectStop(stop.id)">
                       <span class="stop-index">{{ String(i + 1).padStart(2, '0') }}</span><div class="stop-body"><div class="stop-meta"><span>{{ stop.start }} — {{ stop.end }}</span><span class="kind-tag"><component :is="stopIcon(stop)" :size="12" />{{ kindLabel(stop.kind) }}</span></div><h4><small v-if="stop.city" class="stop-city">{{ stop.city }}</small>{{ stop.name }}</h4><p>{{ stop.description }}</p><span class="poi-note" :class="{ unknown: stop.location_status !== 'verified' }"><MapPin :size="12" />{{ stop.location_status === 'verified' ? (stop.matched_name || stop.name) : stop.kind === 'break' ? '自由活动' : '地点待核对' }}</span><small v-if="selectedStopId === stop.id">{{ stop.location_note }}</small><span v-if="stop.address && selectedStopId === stop.id" class="stop-address">{{ stop.address }}</span></div><ChevronRight :size="15" class="stop-arrow" />
                     </button>
-                    <StopFacts :stop="stop" :expenses="day.expenses.filter(cost => cost.stop_id === stop.id && cost.category !== 'transport')" />
+                    <StopFacts :stop="stop" :expenses="day.expenses.filter(cost => cost.stop_id === stop.id && cost.category !== 'transport')" :costs="plan.cost_breakdown?.filter(cost => cost.day_index === activeDay && cost.stop_id === stop.id && cost.category !== 'transport')" />
                     <p v-if="i < day.stops.length - 1 && routeAfter(stop.id)?.scope === 'intercity'" class="transfer">跨城移动 · 见上方交通安排</p>
                     <RouteChoices v-else-if="i < day.stops.length - 1 && routeAfter(stop.id)" :route="routeAfter(stop.id)!" :disabled="busy || checking" @select="chooseRoute(routeAfter(stop.id)!, $event)" />
                     <p v-else-if="i < day.stops.length - 1" class="subtle-note">该段路线尚未查询，请刷新地点与路线。</p>
@@ -240,7 +257,7 @@ function followGuides() {
             </div>
 
             <div class="insights-grid">
-              <div class="budget-card card"><div class="mini-heading"><Wallet :size="18" /><h3>旅行预算</h3><span>全员 · 全程估算</span></div><div class="budget-amount"><strong>¥{{ money(report!.total_cents) }}</strong><span>/ ¥{{ money(report!.budget_cents) }}</span></div><div class="budget-bar"><span :style="{ width: budgetRatio + '%' }" :class="{ over: report!.total_cents > report!.budget_cents }"></span></div><div class="cost-list"><div v-for="cost in costs" :key="cost.category"><span>{{ cost.name }}</span><strong>¥{{ money(cost.value) }}</strong></div></div><p class="subtle-note">所有费用均为估算，不代表实时票价或酒店报价。</p></div>
+              <div class="budget-card card"><div class="mini-heading"><Wallet :size="18" /><h3>行程费用估算</h3><span>全员 · 全程估算</span></div><div class="budget-amount"><strong>¥{{ money(report!.total_cents) }}</strong><span>/ 预算上限 ¥{{ money(report!.budget_cents) }}</span></div><div class="budget-bar"><span :style="{ width: budgetRatio + '%' }" :class="{ over: report!.total_cents > report!.budget_cents }"></span></div><div class="cost-list"><div v-for="cost in costs" :key="cost.category"><span>{{ cost.name }}</span><strong>¥{{ money(cost.value) }}</strong></div></div><p v-if="report!.total_cents > report!.budget_cents" class="subtle-note">超出预算 ¥{{ money(report!.total_cents - report!.budget_cents) }}；当前方案尚未满足预算。</p><button type="button" class="text-button" @click="budgetOpen = true">查看预算明细</button><button type="button" class="text-button" :disabled="busy || checking" @click="reconcileCosts">核对并同步费用</button><button v-if="report!.total_cents > report!.budget_cents" type="button" class="text-button" :disabled="busy || checking" @click="reviseBudget">按预算重排并说明取舍</button><p class="subtle-note">全员全程合计包含住宿及所选往返铁路；逐项小计与分类合计使用同一账本。费用为参考估算，不代表订单报价。</p></div>
               <div class="validation-card card"><div class="mini-heading"><CircleCheck :size="18" /><h3>出发前，检查一下</h3><button class="icon-button" :disabled="checking || busy" aria-label="重新校验方案" @click="validateAgain"><RefreshCw :size="15" :class="{ spin: checking }" /></button></div><div class="validation-status" :class="{ 'has-issues': issues.length }"><component :is="issues.length ? CircleAlert : CircleCheck" :size="21" /><div><strong>{{ validationTitle }}</strong><p>{{ report!.unknowns.length ? `还有 ${report!.unknowns.length} 项信息需要核实` : '检查范围内未发现其他问题' }}</p></div></div><ul v-if="issues.length" class="issues-list"><li v-for="(issue, i) in issues" :key="i"><span v-if="issue.day_index !== null">第 {{ issue.day_index + 1 }} 天：</span>{{ issue.message }}</li></ul><button v-if="issues.length" class="secondary-button" :disabled="busy" @click="reviseProblems"><Sparkles :size="15" /> 请 AI 调整这些问题</button><button class="unknown-toggle" @click="showUnknowns = !showUnknowns">{{ showUnknowns ? '收起' : '查看' }}待确认信息 <ChevronRight :size="14" :class="{ rotated: showUnknowns }" /></button><ul v-if="showUnknowns" class="unknown-list"><li v-for="(item, i) in report!.unknowns" :key="i">{{ item.day_index !== null ? `第 ${item.day_index + 1} 天：` : '' }}{{ item.message }}</li></ul></div>
             </div>
             <div class="plan-actions card"><button class="secondary-button" :disabled="busy || checking" @click="run(false, true)">更新路线与顺路餐饮</button><button v-if="form.guides?.length" class="text-button" :disabled="busy || checking" @click="followGuides">按攻略优先重新规划</button><small>活动变更才新增方案；仅更新路线或切换交通直接保存到当前行程。</small><button class="text-button" :disabled="busy || checking" @click="deleteHistory">删除当前历史版本</button></div>
@@ -265,6 +282,7 @@ function followGuides() {
     </main>
     <footer><a class="footer-brand" href="#"><Compass :size="17" /> 漫游 · ROAM</a><p>认真规划，自在出发。</p><a href="https://lbs.amap.com/" target="_blank" rel="noopener noreferrer">地图与路线由高德提供 <ExternalLink :size="12" /></a></footer>
 
+    <BudgetDetails v-if="plan" :open="budgetOpen" :plan="plan" @close="budgetOpen = false" />
     <div v-if="historyOpen" class="modal-backdrop" @click.self="historyOpen = false"><section class="history-modal card" role="dialog" aria-modal="true" aria-labelledby="history-title"><div class="mini-heading"><History :size="20" /><h3 id="history-title">我的行程</h3><button class="icon-button" aria-label="关闭行程历史" @click="historyOpen = false"><X :size="20" /></button></div><p v-if="!history.length" class="history-empty">还没有保存的行程。完成第一次规划后，会自动出现在这里。</p><button v-for="item in history" :key="item.id" class="history-item" :disabled="busy" @click="openHistory(item.id)"><span class="icon-tile"><MapPin :size="20" /></span><div><strong>{{ item.title }}</strong><span>{{ item.destination }} · {{ item.start_date }} · 版本 {{ item.revision }}</span></div><ChevronRight :size="18" /></button></section></div>
   </div>
 </template>

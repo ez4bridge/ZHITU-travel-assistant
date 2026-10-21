@@ -74,3 +74,11 @@ footer{display:flex;align-items:center;gap:22px;border-top:1px solid var(--line)
 .guide-evidence blockquote { margin: 6px 0; padding-left: 10px; border-left: 2px solid var(--line); color: var(--muted); font-size: 11px; }
 @media (max-width: 600px) { .stop-facts { margin-left: 10px; } }
 @media (max-width: 600px) { .route-choices { margin-left: 10px; } .plan-actions { align-items: stretch; flex-direction: column; } .plan-actions small { flex: 0 1 auto; } }
+
+.budget-modal { border: 0; margin: auto; color: var(--text); width: calc(100% - 32px); }
+.budget-modal::backdrop { background: #23413055; backdrop-filter: blur(5px); }
+.budget-summary { font-size: 12px; line-height: 1.8; margin: 12px 0; }
+.budget-detail-group { font-size: 11px; line-height: 1.8; margin: 16px 0; overflow-wrap: anywhere; }
+.budget-detail-group article { border-top: 1px solid var(--line); padding: 10px 0; }
+.budget-detail-group small { display: block; font-size: 9px; color: var(--muted); }
+.budget-group-total { display: block; color: var(--muted); margin-bottom: 8px; }

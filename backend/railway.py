@@ -169,11 +169,12 @@ class Railway:
             try:
                 result = await self.query(transfer.from_city, transfer.to_city, transfer.departure_date.isoformat(), transfer.departure_time)
                 option = self.options.get(selected_id)
-                if not option or (city_key(option['from_city']), city_key(option['to_city']), option['departure_date']) != (city_key(transfer.from_city), city_key(transfer.to_city), transfer.departure_date.isoformat()):
+                if (not option or (city_key(option['from_city']), city_key(option['to_city']), option['departure_date']) != (city_key(transfer.from_city), city_key(transfer.to_city), transfer.departure_date.isoformat())
+                        or option['departure_time'] < transfer.departure_time or not self.fits(option, itinerary, transfer)):
                     key = (city_key(transfer.from_city), city_key(transfer.to_city), transfer.departure_date.isoformat())
                     candidates = self.query_cache.get(key, result)['options']
                     option = next((candidate for candidate in candidates
-                                   if candidate['departure_time'] >= transfer.departure_time and self.fits(candidate, itinerary)), None)
+                                   if candidate['departure_time'] >= transfer.departure_time and self.fits(candidate, itinerary, transfer)), None)
                 if not option:
                     transfer.query_note = result['message'] if not result['options'] else '未找到符合当前活动时间窗口的车次，请调整出行时段'
                     continue
@@ -194,7 +195,7 @@ class Railway:
             except Exception as error:
                 transfer.query_note = '铁路查询未完成，交通仍为估算：' + settings.safe_error(error)[:160]
 
-    def fits(self, option: dict, itinerary: Itinerary) -> bool:
+    def fits(self, option: dict, itinerary: Itinerary, transfer=None) -> bool:
         start = datetime.fromisoformat(option['departure_date'] + 'T' + option['departure_time'])
         end = datetime.fromisoformat(option['arrival_date'] + 'T' + option['arrival_time'])
         trip_start = datetime.combine(self.request.start_date, time.fromisoformat(self.request.start_time))
@@ -207,4 +208,13 @@ class Railway:
                 after = datetime.combine(day.date, time.fromisoformat(stop.end))
                 if before < end + timedelta(minutes=45) and after > start - timedelta(minutes=45):
                     return False
+                if transfer is not None:
+                    planned_start = datetime.combine(transfer.departure_date, time.fromisoformat(transfer.departure_time))
+                    planned_end = datetime.combine(transfer.arrival_date, time.fromisoformat(transfer.arrival_time))
+                    # A late train can miss daytime activities without overlapping
+                    # any of them. Check city arrival/departure order as well.
+                    if city_key(stop.city) == city_key(transfer.to_city) and planned_start <= before < end + timedelta(minutes=45):
+                        return False
+                    if city_key(stop.city) == city_key(transfer.from_city) and start - timedelta(minutes=45) < after <= planned_end:
+                        return False
         return True

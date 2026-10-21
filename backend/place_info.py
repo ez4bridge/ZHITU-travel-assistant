@@ -29,6 +29,63 @@ def wants_area(stop):
     return stop.location_behavior == 'area' or bool(stop.area_name) or bool(re.search(r'一带|片区|区域|周边|附近', query))
 
 
+def region_key(name):
+    return re.sub(r'国家重点风景名胜区|国家风景名胜区|风景名胜区|历史文化街区|历史街区|传统街区|民俗文化村|民俗村|文化村|街区|景区|区域|一带|周边|附近|村$', '', name).strip()
+
+
+def prepare_regional_stop(stop, previous=None):
+    """Regional self-catering has a real meeting point, not a fictitious restaurant."""
+    text = stop.name
+    regional_meal = stop.kind == 'meal' and (wants_area(stop) or (
+        re.search(r'街|夜市|村|古城|片区|区域|附近|湖畔|海边|海滨|商圈', text)
+        and not re.search(r'店|饭|餐厅|酒楼|食府|馆|肉粽', stop.place_name)))
+    if regional_meal:
+        raw = re.sub(r'^(?:早餐|午餐|晚餐|夜宵|用餐)[：:·\s]*', '', text).strip()
+        raw = re.sub(r'(?:海鲜)?(?:早餐|午餐|晚餐|夜宵|用餐|小吃)(?:自理|自选)?$', '', raw).strip()
+        if (previous and previous.location_status == 'verified' and previous.area_name
+                and len(region_key(raw)) >= 2 and region_key(raw) in region_key(previous.area_name)
+                and city_key(stop.city or previous.city) == city_key(previous.city)):
+            stop.area_name = previous.area_name
+            stop.place_name = previous.area_name
+            stop.area_poi_id = previous.area_poi_id
+            stop.poi_id = previous.poi_id
+        else:
+            stop.area_name = stop.area_name or stop.place_name or raw
+            stop.place_name = stop.area_name
+        stop.location_behavior = 'area'
+    elif stop.kind in ('sight', 'break') and re.search(
+            r'景区|风景名胜区|公园$|广场$|步行街$|古镇$|古城$|湖$|海$|历史街区$|传统街区$|文化村$|民俗村$',
+            stop.place_name or stop.name):
+        stop.area_name = stop.area_name or stop.place_name or stop.name
+        stop.location_behavior = 'area'
+
+
+async def fallback_anchor(amap, stop, parent_name, previous_anchor=''):
+    """Use named provider entrance/landmark results, never arbitrary nearby coordinates."""
+    key = region_key(parent_name)
+    if len(key) < 2:
+        return False
+    options = []
+    for suffix in ('入口', '游客中心'):
+        for item in await amap.search(f'{key} {suffix}', stop.city):
+            name = item.get('name', '')
+            point = item.get('location')
+            if (key not in name or not point or re.search(r'停车|厕所|卫生间|售票|管理|办公', name)
+                    or not re.search(r'(?:入口|出入口|[东西南北正]门|游客(?:服务)?中心)$', re.sub(r'[()（）\s]', '', name))):
+                continue
+            options.append(item)
+        if options:
+            break
+    if not options:
+        return False
+    selected = next((p for p in options if p['id'] == previous_anchor), None) or secrets.choice(options)
+    stop.poi_id, stop.location = selected['id'], tuple(selected['location'])
+    stop.matched_name, stop.address = selected['name'], selected.get('address', '')
+    stop.location_status = 'verified'
+    stop.anchor_note = f'区域详情未提供选点，已用高德城市内检索核对「{selected["name"]}」作为区域通勤点；不是随机坐标'
+    return True
+
+
 async def detail(amap, poi_id, city):
     cache = getattr(amap, 'place_details', None)
     if cache is None:
@@ -72,6 +129,10 @@ def apply_business(stop, item, scope='place'):
     stop.opening_hours_scope = scope
     stop.information_source = f'https://www.amap.com/place/{item["id"]}'
     stop.information_queried_at = datetime.now(timezone.utc)
+    if stop.kind == 'meal' and stop.location_behavior == 'area':
+        stop.average_cost_yuan = None
+        stop.food_reference = ''
+        return
     if stop.kind == 'meal':
         tag = business.get('tag')
         stop.food_reference = tag[:500] if isinstance(tag, str) else ''
@@ -88,14 +149,14 @@ async def enrich_place(amap, stop, previous_anchor=''):
         return
     parent = await detail(amap, stop.area_poi_id or stop.poi_id, stop.city or amap.city)
     if not parent:
-        if wants_area(stop):
+        if wants_area(stop) and not await fallback_anchor(amap, stop, stop.area_name or stop.place_name or stop.name, previous_anchor):
             stop.location = None
             stop.location_status = 'unknown'
             stop.anchor_note = '区域内具体点位未核验成功；未使用随机坐标冒充通勤起终点'
         return
     explicit = wants_area(stop)
     automatic_area = stop.kind in ('sight', 'break') and bool(re.search(
-        r'(?:景区|公园|广场|步行街|古镇|古城|湖|海)$', stop.place_name or stop.name))
+        r'(?:景区|风景名胜区|公园|广场|步行街|古镇|古城|湖|海|历史街区|传统街区|文化村|民俗村)$', stop.place_name or stop.name))
     if wants_area(stop) or automatic_area:
         stop.area_name = stop.area_name or parent.get('name', stop.name)
         stop.area_poi_id = parent['id']
@@ -138,6 +199,10 @@ async def enrich_place(amap, stop, previous_anchor=''):
             stop.location = point
             stop.matched_name = f'{parent.get("name", stop.name)}（地图入口）'
             stop.anchor_note = '未返回适合的区域子地点，使用高德明确提供的入口；没有随机生成区域坐标'
+        elif explicit and stop.kind == 'meal' and re.search(r'钟楼|牌坊|纪念碑|游客中心|入口|[东西南北正]门|桥$|塔$', parent.get('name', '')):
+            stop.anchor_note = f'使用高德已核实地标「{parent.get("name", stop.name)}」作为该区域自选用餐的集合点'
+        elif explicit and await fallback_anchor(amap, stop, parent.get('name', stop.area_name), previous_anchor):
+            pass
         elif explicit:
             stop.location, stop.location_status = None, 'unknown'
             stop.anchor_note = '未返回可核实的区域子地点或入口，请指定具体景点；未以区域中心冒充入口'

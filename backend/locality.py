@@ -58,7 +58,7 @@ def prepare_accommodation(itinerary, trip, only_day=None):
 
 async def optimize_day_meals(amap, day, protected_text=''):
     for index, meal in enumerate(day.stops):
-        if meal.kind != 'meal' or index == 0 or index == len(day.stops) - 1:
+        if meal.kind != 'meal' or meal.location_behavior == 'area' or index == 0 or index == len(day.stops) - 1:
             continue
         names = [name for name in (meal.place_name, meal.matched_name, meal.name)
                  if name and name not in ('早餐', '午餐', '晚餐', '用餐')]

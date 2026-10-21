@@ -79,3 +79,22 @@ def recost_all(trip, itinerary, routes, only_day=None):
                 category='transport', unit_cost=Decimal(total) / 100,
                 quantity=1 if basis == 'person' else vehicles, basis='person' if basis == 'person' else 'group',
                 note='逐段参考区间取上限纳入全员预算；车辆按每车最多4人。计算依据见交通选项，不含租车与未返回的额外费用'))
+
+
+def same_activity_structure(before, after):
+    """Filling an area's routing anchor does not change the user's activity list."""
+    if len(before.days) != len(after.days):
+        return False
+    for old_day, new_day in zip(before.days, after.days):
+        if old_day.date != new_day.date or len(old_day.stops) != len(new_day.stops):
+            return False
+        for old, new in zip(old_day.stops, new_day.stops):
+            if (old.id, old.name, old.kind, old.city) != (new.id, new.name, new.kind, new.city):
+                return False
+            if old.poi_id == new.poi_id:
+                continue
+            if (new.location_behavior == 'area' and new.area_poi_id and new.location_status == 'verified'
+                    and (old.location_status != 'verified' or new.area_poi_id == (old.area_poi_id or old.poi_id))):
+                continue
+            return False
+    return True

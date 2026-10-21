@@ -60,6 +60,7 @@ class Amap:
         self.city = self.cities[0]
         self.emit = emit
         self.places = {}
+        self._search_locks = {}
         self.routes = {}
         self.fatal_error = None
         self._blocked_paths = {}
@@ -146,6 +147,13 @@ class Amap:
     async def search(self, keywords, city=''):
         city = self.canonical_city(city)
         keywords = str(keywords).strip()[:120]
+        key = (city_key(city), keywords)
+        async with self._search_locks.setdefault(key, asyncio.Lock()):
+            return await self._search(keywords, city)
+
+    async def _search(self, keywords, city=''):
+        city = self.canonical_city(city)
+        keywords = str(keywords).strip()[:120]
         cache_key = (city_key(city), keywords)
         if cache_key in self.places:
             return self.places[cache_key]
@@ -197,7 +205,7 @@ class Amap:
             stop.location_note = '原地休息，位置由前一活动继承' if stop.location_behavior == 'same_as_previous' else '尚未指定活动地点'
             return
         query = place_query(stop)
-        if stop.kind == 'meal' and (stop.location_behavior == 'area' or re.search(r'一带|周边|附近|自行选择|自由漫步', query)):
+        if stop.kind == 'meal' and stop.location_behavior != 'area' and re.search(r'一带|周边|附近|自行选择|自由漫步', query):
             stop.poi_id = ''
             stop.location_note = '这是餐饮区域建议，需要选择具体餐馆，不能用区域中心冒充餐馆'
             return
@@ -222,9 +230,10 @@ class Amap:
         candidates = [p for p in candidates if query in p['name'] or p['name'] in query
                       or SequenceMatcher(None, query, p['name']).ratio() >= .75]
         candidates = list({p['id']: p for p in candidates}.values())
-        if stop.kind == 'meal':
+        if stop.kind == 'meal' and stop.location_behavior != 'area':
             candidates = [p for p in candidates if not p.get('type') or '餐饮' in p['type']]
-        exact = [p for p in candidates if p['name'] == query or p['id'] == stop.poi_id]
+        by_id = [p for p in candidates if p['id'] == stop.poi_id]
+        exact = by_id or [p for p in candidates if p['name'] == query]
         if stop.kind == 'sight' and len(exact) > 1:
             scenic = [p for p in exact if '风景名胜' in p.get('type', '')]
             if len(scenic) == 1:
@@ -377,6 +386,9 @@ class Amap:
                 if self.emit:
                     await self.emit('status', {'message': f'核对第 {day_index + 1} 天地点：{stop.name}'})
                 try:
+                    if enrich_details:
+                        from .place_info import prepare_regional_stop
+                        prepare_regional_stop(stop, day.stops[index - 1] if index else None)
                     regional_rest = False
                     if enrich_details and index and stop.kind == 'break' and stop.location_behavior == 'unlocated':
                         previous = day.stops[index - 1]
@@ -393,6 +405,8 @@ class Amap:
                     if enrich_details and stop.location_status == 'verified':
                         from .place_info import enrich_place
                         await enrich_place(self, stop, previous_anchor=previous_anchor)
+                        if stop.kind == 'meal' and stop.location_behavior == 'area':
+                            stop.anchor_note += '；区域内自选餐饮，此为集合／通勤点，不代表已确认餐馆；具体店铺与消费自行选择，区域内游览和选餐步行另计'
                         if regional_rest:
                             stop.anchor_note += '；此为区域内补充选择的休息点，自行返程路线未纳入核实'
                     if stop.location_behavior == 'same_as_previous' and index > 0:
@@ -437,8 +451,10 @@ class Amap:
                     try:
                         if previous.poi_id == current.poi_id and previous.location == current.location:
                             leg = leg.model_copy(update={'available': True, 'stationary': True, 'duration_s': 0,
-                                'distance_m': 0, 'note': '同一已核实地点，无需地点间转移'})
-                        else:
+                                'distance_m': 0, 'note': ('两项活动使用同一已核实区域通勤点，点间转移为0；区域内游览与选餐步行另计'
+                                    if previous.location_behavior == 'area' or current.location_behavior == 'area'
+                                    else '同一已核实地点，无需地点间转移')})
+                        elif not (compare_modes or mode == 'auto'):
                             result = await self.route_in_city(previous.location, current.location, selected_mode, current.city)
                             leg = leg.model_copy(update={**result, 'available': True})
                     except RuntimeError as error:
@@ -468,6 +484,10 @@ class Amap:
                                     task.cancel()
                             await asyncio.gather(*tasks, return_exceptions=True)
                             raise
+                        if mode != 'auto':
+                            chosen = next(o for o in leg.alternatives if o.mode == selected_mode)
+                            for key, value in chosen.model_dump().items():
+                                setattr(leg, key, value)
                         if mode == 'auto':
                             available = [o for o in leg.alternatives if o.available and o.duration_s is not None]
                             if available:

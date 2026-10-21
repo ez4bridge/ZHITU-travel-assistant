@@ -1,7 +1,10 @@
 import json
+import asyncio
 from typing import TypedDict
 from datetime import timedelta
+from time import monotonic
 
+import httpx
 from openai import AsyncOpenAI
 from langgraph.graph import StateGraph, END
 from pydantic import ValidationError
@@ -10,6 +13,8 @@ from .config import settings
 from .models import Itinerary, city_key
 from .journey import normalize_cities
 from .amap import MapServiceError
+from .model_stream import complete_model
+from .generation_batches import generate_batches, DayBatch, BatchStructureError, structure_issues
 
 
 class AgentState(TypedDict):
@@ -37,6 +42,12 @@ RAIL_TOOL = {'type': 'function', 'function': {'name': 'query_train_tickets',
         'travel_date': {'type': 'string', 'description': 'YYYY-MM-DD，旅行日期内'},
         'earliest_time': {'type': 'string', 'description': 'HH:MM，最早发车时间'}},
         'required': ['from_city', 'to_city', 'travel_date'], 'additionalProperties': False}}}
+
+
+def model_client():
+    # Match map requests: Windows system proxies must not silently reroute model traffic.
+    return AsyncOpenAI(api_key=settings.llm_key, base_url=settings.llm_url, timeout=60, max_retries=0,
+                       http_client=httpx.AsyncClient(timeout=60, trust_env=False))
 
 
 async def generate_itinerary(request, amap, emit, previous=None, instruction='', rail=None):
@@ -89,24 +100,44 @@ search_places 每次指定一个目的地城市；get_route 只查询同城地�
 当前攻略模式为 {request.guide_mode}：prefer 表示优先保留攻略中的地点与合理顺序，按日期、地域、预算和用户偏好取舍；inspiration 表示仅参考灵感。都不能忽略硬约束或编造采纳记录。
 对每篇攻略的主要地点、路线和玩法输出 guide_decisions，每条 excerpt 必须是正文中的连续原文（最多300字），place_names 只写该摘录中实际出现的地点。status=adopted/adjusted/not_used，stop_ids 指向最终具体活动；reason 解释如何应用，或为何调整/未采纳。不要仅写一段摘要就声称参考完成。
 为每个活动设置唯一 id（例如 d1s1）。每个景点门票、每顿餐饮和已确定住宿分别列 expenses 并用 stop_id 关联；费用只在 expenses 计一次，不在活动中重复记账。查不到实价可给明确模型预算估算，不得把“未查询”当作免费；开放时间不自行填报已核实。
-摘要与 tips 不手算总费用。市内费用在每天 expenses 中给出，跨城费用只写在 transfers.unit_cost，禁止在 expenses 重复计费，由程序汇总。
+按预算先预留已查询铁路、必要住宿和餐饮，再选择可负担的景点与真实餐馆；超支须更换消费选择而非压低同一商家参考或漏项。摘要与 tips 不手算总费用。市内费用在每天 expenses 中给出，跨城费用只写在 transfers.unit_cost，禁止在 expenses 重复计费，由程序汇总。
 transfers.basis=person 表示每人票价，group 表示全员该段总费用；全部费用都是人民币元。
 每天仍保留一个 DayPlan；纯跨城日在 stops 留空，不虚构游玩活动。不要把未出现在最终行程中的餐馆或路线写进 tips。
-目前先使用工具收集资料，随后会要求输出结构化 JSON 行程。用自然中文描述行程，不展示内部英文枚举或隐藏的思考过程。'''
+目前只使用工具查询必要地点及铁路，不必逐段调用get_route，最终服务端统一查询全部真实交通方式。每轮工具调用最多6次，优先核对不同目的地的核心地点，禁止一次查完所有攻略地点；其余最终行程地点会在地图补全阶段逐一核对。区域内自选餐饮请设置location_behavior=area、area_name为明确区域名称；它使用区域内真实集合点，不冒充确定餐馆。随后会要求输出结构化 JSON 行程。用自然中文描述行程，不展示内部英文枚举或隐藏的思考过程。'''
     messages = [{'role': 'system', 'content': system},
                 {'role': 'user', 'content': request.model_dump_json()}]
     if previous:
         messages.append({'role': 'user', 'content': '修改之前的方案，一次修改后结束。用户要求：' + instruction +
                          '\n旧方案和校验：' + json.dumps({'itinerary': previous.itinerary.model_dump(mode='json'),
                                               'validation': previous.validation.model_dump(mode='json')}, ensure_ascii=False)})
-    async with AsyncOpenAI(api_key=settings.llm_key, base_url=settings.llm_url, timeout=60, max_retries=0) as client:
+    research_started = monotonic()
+    research_limit = 3 if len(request.city_route) == 1 else 4
+    async with model_client() as client:
         async def research(state):
             await emit('status', {'message': f'Agent 正在查询和整理城市资料（第 {state["rounds"] + 1} 轮）'})
-            response = await client.chat.completions.create(model=settings.llm_model, messages=state['messages'],
+            response = await complete_model(client, emit, 'research', model=settings.llm_model, messages=state['messages'],
                 tools=TOOLS + ([RAIL_TOOL] if rail_available else []), tool_choice='required' if state['rounds'] == 0 else 'auto', temperature=.2,
                 max_tokens=1800, **settings.model_options())
             message = response.choices[0].message
+            if message.tool_calls and len(message.tool_calls) > 6:
+                # Execute only the request's six-call research budget. Keep the
+                # assistant/tool protocol paired; omitted calls are not facts.
+                message.tool_calls = message.tool_calls[:6]
+                await emit('status', {'message': '本轮先核对六个核心地点，其他行程地点将在地图补全阶段核对'})
             updated = [*state['messages'], message.model_dump(exclude_none=True, exclude={'reasoning_content'})]
+            # Searches in one model response are independent; keep result order,
+            # global map pacing and fatal-error handling unchanged. Railway RPCs
+            # remain serialized because one stdio stream owns their responses.
+            search_jobs = {}
+            async def search_call(call):
+                args = json.loads(call.function.arguments)
+                city = args.get('city', request.city_route[0] if len(request.city_route) == 1 else '')
+                return {'places': await amap.search(args['keywords'], city), 'city': city}
+            indices = [(i, call) for i, call in enumerate((message.tool_calls or [])[:6])
+                       if call.function.name == 'search_places']
+            if indices:
+                values = await asyncio.gather(*(search_call(call) for _, call in indices), return_exceptions=True)
+                search_jobs = dict(zip((i for i, _ in indices), values))
             for call_index, call in enumerate(message.tool_calls or []):
                 args = {}
                 try:
@@ -114,8 +145,9 @@ transfers.basis=person 表示每人票价，group 表示全员该段总费用；
                     if call_index >= 6:
                         raise RuntimeError('单轮工具请求过多，请使用已有资料')
                     if call.function.name == 'search_places':
-                        city = args.get('city', request.city_route[0] if len(request.city_route) == 1 else '')
-                        result = {'places': await amap.search(args['keywords'], city), 'city': city}
+                        result = search_jobs[call_index]
+                        if isinstance(result, BaseException):
+                            raise result
                         summary = '找到 ' + str(len(result['places'])) + ' 个地点：' + '、'.join(p['name'] for p in result['places'])
                     elif call.function.name == 'query_train_tickets' and rail_available:
                         result = await rail.query(**args)
@@ -146,7 +178,7 @@ transfers.basis=person 表示每人票价，group 表示全员该段总费用；
 
         def next_step(state):
             last_assistant = next((m for m in reversed(state['messages']) if m['role'] == 'assistant'), {})
-            return 'research' if last_assistant.get('tool_calls') and state['rounds'] < 8 else END
+            return 'research' if last_assistant.get('tool_calls') and state['rounds'] < research_limit and monotonic() - research_started < 60 else END
 
         builder = StateGraph(AgentState)
         builder.add_node('research', research)
@@ -155,15 +187,37 @@ transfers.basis=person 表示每人票价，group 表示全员该段总费用；
         result = await builder.compile().ainvoke({'messages': messages, 'rounds': 0}, {'recursion_limit': 12})
         await emit('status', {'message': '正在生成每日行程与全员费用明细'})
         schema = Itinerary.model_json_schema()
+        stop_properties = schema['$defs']['Stop']['properties']
+        for field in ('location', 'address', 'matched_name', 'location_status', 'location_note',
+            'opening_hours_status', 'opening_hours', 'opening_hours_today', 'opening_hours_scope',
+            'information_source', 'information_queried_at', 'average_cost_yuan', 'area_poi_id',
+            'anchor_note', 'food_reference'):
+            stop_properties.pop(field, None)
+        if request.days >= 4:
+            batch_schema = DayBatch.model_json_schema()
+            batch_schema['$defs']['Stop']['properties'] = stop_properties
+            async def call_batch(batch_messages, phase, tokens):
+                return await complete_model(client, emit, phase, model=settings.llm_model, messages=batch_messages,
+                    response_format={'type': 'json_object'}, temperature=.2, max_tokens=tokens, **settings.model_options())
+            try:
+                itinerary = await generate_batches(request, result['messages'], call_batch, emit, batch_schema)
+                normalize_cities(request, itinerary)
+                return itinerary
+            except BatchStructureError:
+                # A private batching schema must not become a new hard failure.
+                # Reuse the research and the existing public-schema generator once;
+                # the original request deadline still bounds all calls and repairs.
+                await emit('status', {'message': '分批生成的数据格式未通过检查，正在使用已有资料直接生成完整行程',
+                    'phase': 'itinerary_fallback'})
         json_messages = [*result['messages'], {'role': 'user', 'content':
-            '现在停止工具调用，只输出一个符合以下 schema 的 JSON 对象。不要 Markdown。地点使用已查到的 name 和 poi_id。'
+            '现在停止工具调用，只输出符合以下schema的紧凑JSON对象。不要 Markdown，省略默认空字段和地图元数据。summary不超过120字，每个活动description不超过80字，tips最多5条。地点使用已查到的 name 和 poi_id。'
             '每个 stop.city 必须是本次目的地列表中的一个城市。不提供或声称验证坐标和营业时间；每天日期连续，预算包含全员所有天费用及所选跨城交通。费用 basis=person 时按人数乘，'
-            'basis=group 时不再按人数乘。quantity 为单位数量（例如夜数或餐数），unit_cost 为每单位人民币金额。'
+            'basis=group 时不再按人数乘。quantity 为每人的单位次数（例如每人入场次数），绝不是同行人数；每人一张门票必须 quantity=1，unit_cost 为每单位人民币金额。'
             '每天需给餐饮和景点费用，多日旅行除最后一天需住宿费用；全部价格都是估算。'
             'transfers 必须按完整交通顺序列全，时间不得与活动冲突，交通日期包含在旅行天数内。'
             'transfers 的费用不再写到 days[].expenses，避免重复计费。\n' + json.dumps(schema, ensure_ascii=False)}]
         for attempt in range(2):
-            response = await client.chat.completions.create(model=settings.llm_model, messages=json_messages,
+            response = await complete_model(client, emit, 'itinerary', model=settings.llm_model, messages=json_messages,
                 response_format={'type': 'json_object'}, temperature=.2, max_tokens=min(16000, 3000 + request.days * 1500), **settings.model_options())
             content = response.choices[0].message.content or ''
             try:
@@ -174,7 +228,7 @@ transfers.basis=person 表示每人票价，group 表示全员该段总费用；
                 return itinerary
             except (ValidationError, ValueError) as error:
                 if attempt:
-                    raise RuntimeError('模型未生成有效的行程结构，请重试。') from None
+                    raise BatchStructureError('itinerary', structure_issues(error)) from None
                 await emit('status', {'message': '模型输出格式有误，正在修复一次'})
                 # Error schema only; never leak provider credentials or exception response URLs.
                 detail = error.json(include_input=False)[:3000] if isinstance(error, ValidationError) else str(error)

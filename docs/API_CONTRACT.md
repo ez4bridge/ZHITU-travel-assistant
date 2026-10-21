@@ -4,6 +4,10 @@
 
 request.mode 默认 auto，仍兼容五种显式方式；路线 mode 只保存实际方式。重新校验不联网。
 
+长行程处理：4天及以上内部按统一框架与两天一批细化，公共PlanRecord不变，最终只返回一次result并保存一条完整行程。status可附可选phase（research/outline/days_1_2等），原有消费者可以忽略。时限按规模分配，各阶段和整次都有上限（整次最多900秒）；health.last_failure在超时时增加limits_s和model_phase，tasks.last_phase_seconds保留未完成阶段耗时。错误不返回半成品，不将未完成批次写入历史。
+
+框架和日批次格式校验失败（各最多修复一次），或分批输出长度不足时，复用原查询资料回退到一次完整行程生成流程（该流程最多一次格式修复），仍受原模型／全程时限约束；不因地图限流、网络失败或用户取消触发此回退。城市顺序按连续访问顺序检查，允许非相邻城市回访、纯交通日和往返出发地。最终结构失败的health.last_failure附validation_issues（只含字段路径和错误类型，不含原始内容），错误界面不展示内部阶段枚举。
+
 ## 行程与地图字段
 
 以下市内能力与全国多城市字段同时生效。`confirmed_hotel` 仅绑定首个目的地城市；公交城市参数和交通费用地区使用当前活动的 city。跨城 scope=intercity 的边界不进入市内选用与计费。局部修改保留已有 transfers；存储读取使用旧历史上下文。未传新的可选字段时保持默认值。
@@ -195,3 +199,18 @@ CityTransfer 新字段均有默认值，旧 SQLite 记录继续可读：
 铁路服务源码随仓库收录于 third_party/mcp-server-12306，独立解释器默认路径调整为 .tools/rail-mcp/.venv 下的平台 Python；显式 RAIL_MCP_PYTHON 继续优先。新配置模板启用铁路，原有配置不覆盖。HTTP 与 SSE 字段不变。
 
 前端攻略输入现仅包含正文，提交 `{title:参考攻略 N,text}`，编号按当前顺序重算；不再要求或提交 URL、发表日期。API 保留旧可选 url/published_date 字段及默认值，历史无需迁移。
+
+
+## 费用账本
+
+PlanRecord.cost_breakdown 为程序重算的完整账本，每项含 label/category/unit_cost/quantity/basis/people_multiplier/subtotal_cents/day_index/stop_id/note。跨城行的 day_index=null；金额总和等于 expense_totals 及重新校验后的 total_cents。单价先按分取整再乘次数和人数。
+
+POST /api/plans/{id}/costs/reconcile 无请求体，不调用模型、地图或铁路；关联已有费用、修正重复同行人数、同步已有地图餐饮参考及交通估算，重算校验后原id保存，以 routing_revision 事务防并发覆盖。无数据变化时不递增；旧请求／记录默认 cost_breakdown=[]，读取模型时重算。该操作与只读 validate 分开。
+
+按预算重排仍使用 revise，一次用户点击一轮；附带当前费用分布、差额及预算约束，不承诺无法实现的预算。auto交通仍按接口耗时选择，手动选用方式不会因核对费用而更换。
+
+公开的TripRequest／PlanRecord及SSE事件结构不变。模型正文与工具参数均收齐且结束标记有效后才进入业务处理；截断、空响应或连接提前结束不会保存为成功方案。阶段错误记录含model_phase，不记录密钥、提示词或推理内容。
+
+区域餐饮允许kind=meal、location_behavior=area，以area_name指定自选用餐区域；matched_name与location为真实集合／通勤点，不声称已选定餐馆，区域营业参考不等于店铺营业或菜单报价。同一通勤点的零距离只描述锚点间转移，区域内步行另计。刷新补齐未知区域位置或同区域内改变锚点，若活动名称／顺序等未变，更新原id与routing_revision；更换实际餐馆仍保留新版本。
+
+health.tasks.last_phase_seconds提供model_and_research、rail_enrichment、map_enrichment、costs_and_schedule、validation秒数；仅当前进程最近完成任务，模型检索阶段包含研究工具调用，不能当作纯模型耗时。

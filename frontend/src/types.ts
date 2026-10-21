@@ -31,6 +31,11 @@ export interface Expense {
   basis: 'person' | 'group'; estimated: true; note: string
   stop_id?: string
 }
+export interface CostLine {
+  label: string; category: string; unit_cost: string | number; quantity: number
+  basis: 'person' | 'group'; people_multiplier: number; subtotal_cents: number
+  day_index: number | null; stop_id: string; note: string
+}
 export interface DayPlan {
   date: string; title: string; stops: Stop[]; expenses: Expense[]; accommodation: string; meal_note?: string
 }
@@ -64,6 +69,7 @@ export interface Plan {
   request: TripRequest; itinerary: { title: string; summary: string; days: DayPlan[]; tips: string[]; transfers: CityTransfer[]; guide_insights?: { source_index: number; text: string }[]; guide_decisions?: GuideDecision[] }
   routes: RouteLeg[]; validation: ValidationReport; revision_instruction: string
   expense_totals: Record<string, number>
+  cost_breakdown?: CostLine[]
   adjustments?: string[]
   routing_revision?: number; schedule_baseline?: Record<string, [string, string]>
 }

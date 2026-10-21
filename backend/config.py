@@ -32,6 +32,11 @@ class Settings:
         self.runtime.mkdir(exist_ok=True)
 
     def safe_error(self, error):
+        if type(error).__module__.startswith('openai') and getattr(error, 'status_code', None) == 403:
+            return '模型服务拒绝访问（HTTP 403）。请检查模型服务访问权限或网络代理；本次尚未完成模型调用，不能归因于地图或铁路。'
+        if type(error).__module__.startswith('openai') and type(error).__name__ == 'APITimeoutError':
+            phase = '资料查询' if getattr(error, 'phase', '') == 'research' else '行程结构生成'
+            return f'模型服务在{phase}阶段超过60秒没有收到数据，连接超时；不是地图限额错误。请稍后重试或减少行程复杂度。'
         message = str(error)
         for value in (self.llm_key, self.amap_key, self.amap_web_key, self.amap_js_sec, self.amap_sign_secret):
             if value:
@@ -42,7 +47,10 @@ class Settings:
     def model_options(self):
         if urlparse(self.llm_url).hostname == 'api.deepseek.com':
             return {'extra_body': {'thinking': {'type': 'disabled'}}}
+        if self.llm_model.lower().split('/')[-1].startswith(('deepseek', 'qwen')):
+            return {'extra_body': {'chat_template_kwargs': {'enable_thinking': False}}}
         return {}
+
 
 
 settings = Settings()

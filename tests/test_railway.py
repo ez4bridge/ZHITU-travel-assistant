@@ -113,6 +113,22 @@ async def test_offline_clears_forged_or_stale_proof():
 
 
 @pytest.mark.asyncio
+async def test_selected_train_cannot_arrive_after_destination_activity(monkeypatch):
+    railway, itinerary = enable_rail(monkeypatch)
+    result = await railway.query('北京', '天津', railway.request.start_date.isoformat(), '09:00')
+    option = result['options'][0]
+    itinerary.transfers[0].rail_option_id = option['option_id']
+    # No direct interval overlap: arrival11:43 still makes a09:00 visit impossible.
+    itinerary.days[0].stops = DayPlan.model_validate({'date': railway.request.start_date,
+        'title': '抵达后活动', 'stops': [{'id': 'a', 'name': '游玩', 'city': '天津',
+        'start': '09:00', 'end': '09:15'}]}).stops
+    await railway.enrich(itinerary)
+    assert itinerary.transfers[0].schedule_status == 'estimated'
+    assert itinerary.transfers[0].departure_time == '09:00'
+    assert '时间窗口' in itinerary.transfers[0].query_note
+
+
+@pytest.mark.asyncio
 async def test_failures_are_cached_and_time_window_does_not_claim_verified(monkeypatch):
     railway, itinerary = enable_rail(monkeypatch)
     railway.client.call.side_effect = RuntimeError('network unavailable')

@@ -295,6 +295,7 @@ async def test_malformed_model_json_gets_one_bounded_repair(monkeypatch, repair_
         async def __aenter__(self): return self
         async def __aexit__(self, *args): pass
     monkeypatch.setattr(agent, 'AsyncOpenAI', lambda **kwargs: FakeClient())
+    monkeypatch.setattr(agent, 'complete_model', complete)
     monkeypatch.setattr(settings, 'llm_key', 'fake')
     monkeypatch.setattr(settings, 'amap_key', 'fake')
     emit = AsyncMock()

@@ -166,6 +166,7 @@ async def test_agent_receives_selected_stay_preferences(monkeypatch):
         async def __aenter__(self): return self
         async def __aexit__(self, *args): pass
     monkeypatch.setattr(agent, 'AsyncOpenAI', lambda **kwargs: Client())
+    monkeypatch.setattr(agent, 'complete_model', complete)
     monkeypatch.setattr(settings, 'llm_key', 'test-key')
     monkeypatch.setattr(settings, 'amap_key', 'test-map-key')
     await agent.generate_itinerary(request, SimpleNamespace(), AsyncMock())

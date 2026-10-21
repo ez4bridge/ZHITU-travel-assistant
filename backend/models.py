@@ -339,6 +339,19 @@ class ValidationReport(StrictModel):
     diagnostic: str = ''
 
 
+class CostLine(StrictModel):
+    label: str
+    category: str
+    unit_cost: Decimal
+    quantity: int
+    basis: Literal['person', 'group']
+    people_multiplier: int
+    subtotal_cents: int
+    day_index: int | None = None
+    stop_id: str = ''
+    note: str = ''
+
+
 class PlanRecord(StrictModel):
     id: str
     parent_id: str | None = None
@@ -350,6 +363,7 @@ class PlanRecord(StrictModel):
     validation: ValidationReport
     revision_instruction: str = ''
     expense_totals: dict[str, int] = Field(default_factory=dict)
+    cost_breakdown: list[CostLine] = Field(default_factory=list)
     adjustments: list[str] = Field(default_factory=list)
     routing_revision: int = 0
     schedule_baseline: dict[str, tuple[str, str]] = Field(default_factory=dict)
@@ -357,9 +371,16 @@ class PlanRecord(StrictModel):
     @model_validator(mode='after')
     def authoritative_cost_categories(self):
         totals = {}
-        for expense in itinerary_expenses(self.itinerary):
+        self.cost_breakdown = []
+        daily = [(index, e) for index, day in enumerate(self.itinerary.days) for e in day.expenses]
+        transfers = list(itinerary_expenses(self.itinerary))[len(daily):]
+        for day_index, expense in [*daily, *((None, e) for e in transfers)]:
             amount = cents(expense.unit_cost) * expense.quantity * (self.request.people if expense.basis == 'person' else 1)
             totals[expense.category] = totals.get(expense.category, 0) + amount
+            self.cost_breakdown.append(CostLine(label=expense.label, category=expense.category,
+                unit_cost=Decimal(cents(expense.unit_cost)) / 100, quantity=expense.quantity, basis=expense.basis,
+                people_multiplier=self.request.people if expense.basis == 'person' else 1,
+                subtotal_cents=amount, day_index=day_index, stop_id=expense.stop_id, note=expense.note))
         self.expense_totals = totals
         return self
 
