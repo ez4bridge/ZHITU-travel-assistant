@@ -221,7 +221,7 @@ def saved_plan(store):
     routes[0].alternatives=[RouteOption(mode='transit',available=True,distance_m=2200,duration_s=3600,
         fare_yuan=Decimal('4'),polyline=routes[0].polyline,note='票价估算'),
         RouteOption(mode='walking',available=True,distance_m=1800,duration_s=1200,polyline=routes[0].polyline)]
-    report=Validator(preferred='python')
+    report=Validator()
     from backend.models import ValidationReport
     record=PlanRecord(id='original',created_at=datetime.now(timezone.utc),request=request,itinerary=itinerary,
         routes=routes,validation=ValidationReport(**validate_core(normalized_input(request,itinerary,routes))))
@@ -233,7 +233,7 @@ def test_route_selection_reprices_party_and_preserves_history(monkeypatch,tmp_pa
     import backend.main as main
     store=Store(tmp_path/'plans.sqlite3')
     monkeypatch.setattr(main,'store',store)
-    monkeypatch.setattr(main,'validator',Validator(preferred='python'))
+    monkeypatch.setattr(main,'validator',Validator())
     original=saved_plan(store)
     with TestClient(main.app) as client:
         response=client.post('/api/plans/original/route',json={'day_index':0,'from_id':'a','to_id':'b','mode':'transit'})
@@ -257,7 +257,7 @@ def test_refresh_does_not_call_model_and_preserves_old_version(monkeypatch,tmp_p
     import backend.main as main
     store=Store(tmp_path/'plans.sqlite3')
     monkeypatch.setattr(main,'store',store)
-    monkeypatch.setattr(main,'validator',Validator(preferred='python'))
+    monkeypatch.setattr(main,'validator',Validator())
     original=saved_plan(store)
     generate=AsyncMock(side_effect=AssertionError('refresh cannot call model'))
     monkeypatch.setattr(main,'generate_itinerary',generate)
@@ -300,7 +300,7 @@ def test_local_revision_keeps_other_days_and_routes(monkeypatch,tmp_path):
     from datetime import timedelta
     store=Store(tmp_path/'plans.sqlite3')
     monkeypatch.setattr(main,'store',store)
-    monkeypatch.setattr(main,'validator',Validator(preferred='python'))
+    monkeypatch.setattr(main,'validator',Validator())
     original=saved_plan(store)
     original.request.days=2
     second=original.itinerary.days[0].model_copy(deep=True)

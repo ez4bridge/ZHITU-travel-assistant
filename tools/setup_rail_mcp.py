@@ -35,7 +35,8 @@ def setup(environment: Path = ENVIRONMENT) -> dict:
                     '-r', str(REQUIREMENTS)], check=True, timeout=360)
     subprocess.run([str(python), '-m', 'pip', 'check'], check=True, timeout=30)
     check = subprocess.run([str(python), str(ROOT / 'tools' / 'rail_mcp_stdio.py'), '--check-install'],
-                           cwd=ROOT, check=True, capture_output=True, text=True, timeout=30)
+                           cwd=ROOT, check=True, capture_output=True, text=True, encoding='utf-8',
+                           env={**os.environ, 'PYTHONUTF8': '1'}, timeout=30)
     result = json.loads(check.stdout)
     if Path(result['source']) != (VENDOR / 'src' / 'mcp_12306' / 'server.py').resolve():
         raise RuntimeError('Railway server did not load from the bundled source.')

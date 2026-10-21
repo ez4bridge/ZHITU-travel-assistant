@@ -1,21 +1,82 @@
 export type Mode = 'walking' | 'driving' | 'transit' | 'bicycling' | 'taxi'
-export interface GuideSource { title: string; url?: string; text: string; published_date?: string | null }
+export interface PlanningGuideSource { title: string; url?: string; text: string; published_date?: string | null }
 export type IntercityMode = 'train' | 'flight' | 'bus' | 'driving'
 export interface DestinationStay { city: string; preferred_days: number | string | null }
 export interface CitySuggestion { name: string; province: string; adcode: string }
+export interface MapRegion {
+  status: 'available' | 'unavailable'; requested_city: string; city: string
+  center: [number, number] | null; approximate: true
+  adcode?: string; level?: string; source?: string; message?: string
+}
+export interface StudyOptions {
+  topic: string; end_time: string; max_stops: number; max_walking_m: number; required_place_ids: string[]
+}
+export interface StudySource {
+  id: string; title: string; url: string; publisher: string; publication_date: string
+  retrieved_at: string; original_source_mentions: string[]; text_sha256?: string
+}
+export interface StudyFact { id: string; title: string; text: string; source_ids: string[]; role: string; start_char?: number | null; end_char?: number | null }
+export interface StudyPolicy {
+  status: 'documented_open' | 'documented_closed' | 'unknown' | 'not_visitable'
+  note: string; windows: [string, string][]; last_entry: string | null; source_ids: string[]; free_admission: boolean | null
+}
+export interface StudyContext {
+  corpus_version: string; facts: StudyFact[]; sources: StudySource[]; policies: Record<string, StudyPolicy>
+  retrieval_mode?: 'legacy_structured' | 'raw_text'
+  places?: Record<string, { id: string; name: string; address: string }>
+}
+export interface StudyStop {
+  place_id: string; why_selected: string; guide: string; observation_task: string; fact_ids: string[]
+}
+export interface StudyCatalog {
+  ready: boolean; message: string; corpus_version: string; source_count: number; fact_count: number; topics: string[]
+  places: { id: string; name: string; candidate_group: string; routable: boolean }[]
+  retrieval_mode?: 'raw_text'; chunk_count?: number
+  retrieval?: {
+    configured_mode: string; selected_mode: string; actual_mode: string
+    index_ready: boolean; worker_ready: boolean; fallback_reason: string; last_seconds: number
+  }
+}
+export interface StudyAnswer {
+  status: 'supported' | 'insufficient_evidence'; message: string
+  paragraphs: { text: string; fact_ids: string[] }[]; context: StudyContext | null
+  usage?: QAUsage
+}
+export interface PhotoStudyAnswer {
+  answer: { status: string; visible_summary: string; history: { text: string; source_ids: string[] }[]; observation_tip: string; unknowns: string[] }
+  sources: { id: string; title: string; url: string; kind: string }[]
+  usage: QAUsage
+}
+export interface QAUsage {
+  attempted_calls: number; total_tokens?: number | null; prompt_tokens?: number; completion_tokens?: number
+  usage_missing_calls?: number; reported_total_tokens?: number | null
+  search_calls?: number; fetch_calls?: number; vision_calls?: number; web_cache_hits?: number
+  memory_chars?: number; history_turns?: number; seconds?: number
+}
+export type QAResult = StudyAnswer | PhotoStudyAnswer
+export type ChatResult = QAResult & { conversation_id: string; request_id: string; revision: number; turn_id: string; kind: ChatTurn['kind'] }
+export interface ChatTurn {
+  id: string; request_id: string; revision: number; kind: 'text' | 'photo' | 'photo_followup'
+  question: string; place_name: string; created_at: string; result: QAResult
+}
+export interface StudyConversation {
+  id: string; plan_id: string | null; revision: number; turns: ChatTurn[]; photo_context_available: boolean
+}
 export interface TripRequest {
   origin: string; destination: string; start_date: string; start_time: string
   days: number; style: 'relaxed' | 'balanced' | 'compact'; budget: number | string
   people: number; mode: Mode | 'auto'; preferences: string
   intercity_mode: IntercityMode; include_origin_transport: boolean; return_to_origin: boolean
   destinations: DestinationStay[]
-  guides?: GuideSource[]; compare_modes?: boolean
+  study?: StudyOptions | null
+  guides?: PlanningGuideSource[]; compare_modes?: boolean
   confirmed_hotel?: string
   guide_mode?: 'prefer' | 'inspiration'
 }
 export interface Stop {
   id: string; name: string; kind: 'sight' | 'meal' | 'hotel' | 'break'
   city: string
+  study?: StudyStop | null
   start: string; end: string; description: string; poi_id: string
   address: string; location: [number, number] | null; matched_name: string
   location_status: 'verified' | 'unknown'; location_note: string
@@ -30,11 +91,6 @@ export interface Expense {
   label: string; category: string; unit_cost: string | number; quantity: number
   basis: 'person' | 'group'; estimated: true; note: string
   stop_id?: string
-}
-export interface CostLine {
-  label: string; category: string; unit_cost: string | number; quantity: number
-  basis: 'person' | 'group'; people_multiplier: number; subtotal_cents: number
-  day_index: number | null; stop_id: string; note: string
 }
 export interface DayPlan {
   date: string; title: string; stops: Stop[]; expenses: Expense[]; accommodation: string; meal_note?: string
@@ -69,12 +125,36 @@ export interface Plan {
   request: TripRequest; itinerary: { title: string; summary: string; days: DayPlan[]; tips: string[]; transfers: CityTransfer[]; guide_insights?: { source_index: number; text: string }[]; guide_decisions?: GuideDecision[] }
   routes: RouteLeg[]; validation: ValidationReport; revision_instruction: string
   expense_totals: Record<string, number>
-  cost_breakdown?: CostLine[]
+  study_context?: StudyContext | null
+  weather?: WeatherSnapshot | null
+  weather_by_city?: Record<string, WeatherSnapshot>
   adjustments?: string[]
   routing_revision?: number; schedule_baseline?: Record<string, [string, string]>
 }
 export interface GuideDecision {
   source_index: number; excerpt: string; place_names: string[]; status: 'adopted' | 'adjusted' | 'not_used'; stop_ids: string[]; reason: string
+}
+export interface WeatherDay {
+  date: string; status: 'available' | 'not_covered' | 'unavailable'
+  day_weather: string; night_weather: string; day_temp: number | null; night_temp: number | null
+  temp_max?: number | null; temp_min?: number | null
+  day_wind: string; night_wind: string; day_power: string; night_power: string
+}
+export interface WeatherSnapshot {
+  provider: 'amap' | 'qweather'; source_url: string; requested_city: string; city: string; adcode: string
+  status: 'available' | 'partial' | 'not_covered' | 'unavailable'; message: string
+  failure_code?: string; failure_reason?: string; retryable?: boolean | null
+  issued_at: string | null; fetched_at: string; from_cache: boolean; days: WeatherDay[]
+}
+export interface GuideSource {
+  id: string; title: string; url: string; kind: 'official' | 'public' | 'guide'
+  publication_date: string; retrieved_at: string
+}
+export interface PlaceGuide {
+  plan_id: string; stop_id: string; place_name: string; visit_date: string
+  status: 'ready' | 'partial' | 'unavailable'; message: string
+  items: { category: 'overview' | 'opening' | 'visit' | 'tips'; text: string; source_id: string; evidence: string }[]
+  sources: GuideSource[]; queried_at: string; usage: QAUsage
 }
 export interface ToolEvent { name: string; arguments: Record<string, unknown>; summary: string }
 export interface Health {

@@ -1,0 +1,636 @@
+{
+  "schema": 1,
+  "corpus_version": "raw_066db82477abc61c",
+  "note": "人工阅读原文后标注；仅用于评测，不参与运行时检索。每组位置互为替代证据，跨组需分别找回。",
+  "questions": [
+    {
+      "id": "R01",
+      "split": "dev",
+      "kind": "exact",
+      "question": "陈望道在哪里完成《共产党宣言》的最初翻译？国福路旧居就是翻译处吗？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_9c4dfe43ae468487",
+            "start_char": 424,
+            "end_char": 436,
+            "quote": "回到家乡浙江义乌分水塘村"
+          },
+          {
+            "source_id": "doc_50fa1558ed489994",
+            "start_char": 358,
+            "end_char": 367,
+            "quote": "回到故乡义乌分水塘"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R02",
+      "split": "dev",
+      "kind": "exact",
+      "question": "《新青年》编辑部旧址今天的地址是什么？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_5ce75ee532f00144",
+            "start_char": 572,
+            "end_char": 582,
+            "quote": "今南昌路100弄2号"
+          },
+          {
+            "source_id": "doc_8cb6704eb4265c39",
+            "start_char": 247,
+            "end_char": 257,
+            "quote": "今南昌路100弄2号"
+          },
+          {
+            "source_id": "doc_9a9fd7c72b285e2c",
+            "start_char": 374,
+            "end_char": 386,
+            "quote": "地址：南昌路100弄2号"
+          },
+          {
+            "source_id": "doc_26f35c0200dea155",
+            "start_char": 161,
+            "end_char": 173,
+            "quote": "地址：南昌路100弄2号"
+          },
+          {
+            "source_id": "doc_540eba3a3c922e6e",
+            "start_char": 0,
+            "end_char": 12,
+            "quote": "地址：南昌路100弄2号"
+          },
+          {
+            "source_id": "doc_540eba3a3c922e6e",
+            "start_char": 48,
+            "end_char": 58,
+            "quote": "今南昌路100弄2号"
+          },
+          {
+            "source_id": "doc_540eba3a3c922e6e",
+            "start_char": 854,
+            "end_char": 864,
+            "quote": "今南昌路100弄2号"
+          },
+          {
+            "source_id": "doc_540eba3a3c922e6e",
+            "start_char": 1691,
+            "end_char": 1701,
+            "quote": "今南昌路100弄2号"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R03",
+      "split": "dev",
+      "kind": "exact",
+      "question": "上海社会主义青年团最初由谁担任书记？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_e87358c1fcb4d6af",
+            "start_char": 2624,
+            "end_char": 2630,
+            "quote": "俞秀松任书记"
+          },
+          {
+            "source_id": "doc_acfeaef6597f60e7",
+            "start_char": 859,
+            "end_char": 875,
+            "quote": "俞秀松担任上海社会主义青年团书记"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R04",
+      "split": "dev",
+      "kind": "paraphrase",
+      "question": "渔阳里那所学外语的学校，为什么不直接公开说是在培养革命人才？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_acfeaef6597f60e7",
+            "start_char": 159,
+            "end_char": 174,
+            "quote": "为了掩护团的机关和培养进步青年"
+          },
+          {
+            "source_id": "doc_acfeaef6597f60e7",
+            "start_char": 1025,
+            "end_char": 1044,
+            "quote": "为了隐蔽，于是就办了一个“外国语学社”"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R05",
+      "split": "dev",
+      "kind": "exact",
+      "question": "2026年9月以后的普通周一，黄浦这7处红色场馆开放吗？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_83a8ddc719b7e737",
+            "start_char": 210,
+            "end_char": 232,
+            "quote": "每周二至周日（周一闭馆）9:00-16:30"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R06",
+      "split": "dev",
+      "kind": "exact",
+      "question": "黄浦区7处红色场馆几点停止入场？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_83a8ddc719b7e737",
+            "start_char": 233,
+            "end_char": 242,
+            "quote": "16:00停止入场"
+          },
+          {
+            "source_id": "doc_9a9fd7c72b285e2c",
+            "start_char": 213,
+            "end_char": 222,
+            "quote": "16:00停止入场"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R07",
+      "split": "dev",
+      "kind": "cross",
+      "question": "新渔阳里与老渔阳里在党团创建中各有什么作用？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_e87358c1fcb4d6af",
+            "start_char": 804,
+            "end_char": 812,
+            "quote": "入驻老渔阳里2号"
+          },
+          {
+            "source_id": "doc_540eba3a3c922e6e",
+            "start_char": 348,
+            "end_char": 362,
+            "quote": "上海发起组，并以此为办公地点"
+          }
+        ],
+        [
+          {
+            "source_id": "doc_e87358c1fcb4d6af",
+            "start_char": 2569,
+            "end_char": 2587,
+            "quote": "上海社会主义青年团在新渔阳里6号成立"
+          },
+          {
+            "source_id": "doc_e87358c1fcb4d6af",
+            "start_char": 7268,
+            "end_char": 7286,
+            "quote": "上海社会主义青年团在新渔阳里6号成立"
+          },
+          {
+            "source_id": "doc_acfeaef6597f60e7",
+            "start_char": 86,
+            "end_char": 106,
+            "quote": "团的机关设在当时法租界霞飞路新渔阳里6号"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R08",
+      "split": "dev",
+      "kind": "paraphrase",
+      "question": "蘸墨汁吃粽子的故事为什么与信仰联系在一起？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_9b5976b1753210a7",
+            "start_char": 400,
+            "end_char": 410,
+            "quote": "蘸着墨汁吃粽子的场景"
+          },
+          {
+            "source_id": "doc_9c4dfe43ae468487",
+            "start_char": 450,
+            "end_char": 457,
+            "quote": "竟把墨汁当红糖"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R09",
+      "split": "dev",
+      "kind": "exact",
+      "question": "邵力子、陈望道旧居遗址还有原来的房屋吗？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_50fa1558ed489994",
+            "start_char": 495,
+            "end_char": 509,
+            "quote": "原址已拆除，现为翠湖天地雅苑"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R10",
+      "split": "dev",
+      "kind": "negative",
+      "question": "此刻新渔阳里馆内排队需要多少分钟？",
+      "evidence_groups": []
+    },
+    {
+      "id": "R11",
+      "split": "test",
+      "kind": "exact",
+      "question": "陈望道将译稿带到上海后，由哪两人校阅？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_50fa1558ed489994",
+            "start_char": 406,
+            "end_char": 416,
+            "quote": "供陈独秀、李汉俊校阅"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R12",
+      "split": "test",
+      "kind": "paraphrase",
+      "question": "连接新旧两条革命弄堂的那条小路，后来被大家称为什么？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_e87358c1fcb4d6af",
+            "start_char": 1966,
+            "end_char": 1984,
+            "quote": "这条路被后人称之为“马克思主义小道”"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R13",
+      "split": "test",
+      "kind": "exact",
+      "question": "陈独秀1920年返沪，搬入老渔阳里前先住在谁那里？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_540eba3a3c922e6e",
+            "start_char": 154,
+            "end_char": 169,
+            "quote": "亚东图书馆的汪孟邹处住了一阵子"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R14",
+      "split": "test",
+      "kind": "paraphrase",
+      "question": "上海开会受到巡捕干扰以后，建党的那场会议换到哪里继续？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_9c4dfe43ae468487",
+            "start_char": 499,
+            "end_char": 521,
+            "quote": "会议转移到浙江嘉兴南湖畔的一条游船上继续进行"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R15",
+      "split": "test",
+      "kind": "paraphrase",
+      "question": "哪些后来成为革命领导人的青年，曾在渔阳里学习后到俄国去？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_e87358c1fcb4d6af",
+            "start_char": 2919,
+            "end_char": 2935,
+            "quote": "刘少奇和任弼时都曾在渔阳里学习过"
+          },
+          {
+            "source_id": "doc_acfeaef6597f60e7",
+            "start_char": 211,
+            "end_char": 226,
+            "quote": "刘少奇、任弼时、萧劲光、罗亦农"
+          },
+          {
+            "source_id": "doc_acfeaef6597f60e7",
+            "start_char": 1074,
+            "end_char": 1089,
+            "quote": "刘少奇、任弼时、萧劲光、罗亦农"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R16",
+      "split": "test",
+      "kind": "cross",
+      "question": "在复旦的宣言展示馆，想分别了解译本传播与陈望道生平，应看哪些楼层？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_64da0643381bca9d",
+            "start_char": 659,
+            "end_char": 680,
+            "quote": "一层宣言展厅以“宣言中译 信仰之源”为主题"
+          },
+          {
+            "source_id": "doc_9b5976b1753210a7",
+            "start_char": 184,
+            "end_char": 204,
+            "quote": "展示馆一层以“宣言中译·信仰之源”为主题"
+          }
+        ],
+        [
+          {
+            "source_id": "doc_64da0643381bca9d",
+            "start_char": 707,
+            "end_char": 728,
+            "quote": "二层望道展厅以“千秋巨笔 一代宗师”为主题"
+          },
+          {
+            "source_id": "doc_9b5976b1753210a7",
+            "start_char": 256,
+            "end_char": 273,
+            "quote": "二层以“千秋巨笔·一代宗师”为主题"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R17",
+      "split": "test",
+      "kind": "paraphrase",
+      "question": "2026年9月之后去黄浦这七个红色展馆，最晚什么时候还能进门？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_83a8ddc719b7e737",
+            "start_char": 233,
+            "end_char": 242,
+            "quote": "16:00停止入场"
+          },
+          {
+            "source_id": "doc_9a9fd7c72b285e2c",
+            "start_char": 213,
+            "end_char": 222,
+            "quote": "16:00停止入场"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R18",
+      "split": "test",
+      "kind": "paraphrase",
+      "question": "黄浦这七个红色场馆，散客要买门票或提前订名额吗？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_83a8ddc719b7e737",
+            "start_char": 353,
+            "end_char": 362,
+            "quote": "免费开放，无需预约"
+          },
+          {
+            "source_id": "doc_9a9fd7c72b285e2c",
+            "start_char": 598,
+            "end_char": 607,
+            "quote": "免费开放，无需预约"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R19",
+      "split": "test",
+      "kind": "exact",
+      "question": "黄浦区7处红色场馆公益讲解每天有哪几个时段？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_83a8ddc719b7e737",
+            "start_char": 299,
+            "end_char": 325,
+            "quote": "上午9:30、10:30；下午14:00、15:00"
+          },
+          {
+            "source_id": "doc_9a9fd7c72b285e2c",
+            "start_char": 637,
+            "end_char": 663,
+            "quote": "上午9:30、10:30；下午14:00、15:00"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R20",
+      "split": "test",
+      "kind": "paraphrase",
+      "question": "六个人一起去国福路的宣言展示馆，可以像单人参观一样不预约吗？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_64da0643381bca9d",
+            "start_char": 1163,
+            "end_char": 1184,
+            "quote": "个人参观无需预约，团体（5人以上）预约电话"
+          },
+          {
+            "source_id": "doc_9b5976b1753210a7",
+            "start_char": 668,
+            "end_char": 684,
+            "quote": "5人及以上团体参观请务必提前1天"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R21",
+      "split": "test",
+      "kind": "exact",
+      "question": "2026年七一参观黄浦红色旧址，团队可以通过哪些渠道登记？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_26f35c0200dea155",
+            "start_char": 282,
+            "end_char": 311,
+            "quote": "团队参观可至“上海黄浦”微信公众号、“上海黄浦”APP登记"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R22",
+      "split": "test",
+      "kind": "exact",
+      "question": "中共中央宣传部办公处遗址在哪里，《向导》在哪里编辑？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_70e8356a34b43d87",
+            "start_char": 0,
+            "end_char": 16,
+            "quote": "地址：四川北路1649弄32号处"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R23",
+      "split": "test",
+      "kind": "exact",
+      "question": "1924年上海执行部负责哪四省的党务？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_a6a0d8c3541e5695",
+            "start_char": 165,
+            "end_char": 187,
+            "quote": "上海执行部管辖苏、皖、赣、浙四省和上海市党务"
+          },
+          {
+            "source_id": "doc_a6a0d8c3541e5695",
+            "start_char": 786,
+            "end_char": 808,
+            "quote": "上海执行部管辖苏、皖、赣、浙四省和上海市党务"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R24",
+      "split": "test",
+      "kind": "paraphrase",
+      "question": "老渔阳里重新布展后，客堂北墙放大展示的是哪份中央文件？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_b5939d20e15e4051",
+            "start_char": 859,
+            "end_char": 875,
+            "quote": "客堂间北墙悬挂该文件的大幅影印件"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R25",
+      "split": "test",
+      "kind": "exact",
+      "question": "《新青年》最初叫什么名字，哪一年创办？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_540eba3a3c922e6e",
+            "start_char": 721,
+            "end_char": 754,
+            "quote": "《新青年》原名《青年杂志》，是陈独秀1915年9月在上海创办的月刊"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R26",
+      "split": "test",
+      "kind": "cross",
+      "question": "如果用翻译、校对、正式出版三个环节讲《宣言》中文本，需要哪些地点或史实？",
+      "evidence_groups": [
+        [
+          {
+            "source_id": "doc_9c4dfe43ae468487",
+            "start_char": 424,
+            "end_char": 436,
+            "quote": "回到家乡浙江义乌分水塘村"
+          },
+          {
+            "source_id": "doc_50fa1558ed489994",
+            "start_char": 358,
+            "end_char": 367,
+            "quote": "回到故乡义乌分水塘"
+          }
+        ],
+        [
+          {
+            "source_id": "doc_e87358c1fcb4d6af",
+            "start_char": 1861,
+            "end_char": 1877,
+            "quote": "首个中文全译本也正是在此完成校对"
+          },
+          {
+            "source_id": "doc_50fa1558ed489994",
+            "start_char": 403,
+            "end_char": 416,
+            "quote": "将译稿供陈独秀、李汉俊校阅"
+          }
+        ],
+        [
+          {
+            "source_id": "doc_e87358c1fcb4d6af",
+            "start_char": 4121,
+            "end_char": 4128,
+            "quote": "专门成立印刷所"
+          },
+          {
+            "source_id": "doc_50fa1558ed489994",
+            "start_char": 466,
+            "end_char": 488,
+            "quote": "国内第一个公开正式出版的《共产党宣言》全译本"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "R27",
+      "split": "test",
+      "kind": "negative",
+      "question": "上海唐代城墙遗址明天几点开放？",
+      "evidence_groups": []
+    },
+    {
+      "id": "R28",
+      "split": "test",
+      "kind": "negative",
+      "question": "1920年从上海去北京的飞机每天有几个航班？",
+      "evidence_groups": []
+    },
+    {
+      "id": "R29",
+      "split": "test",
+      "kind": "negative",
+      "question": "现在从人民广场到渔阳里的地铁拥挤程度是多少？",
+      "evidence_groups": []
+    },
+    {
+      "id": "R30",
+      "split": "test",
+      "kind": "negative",
+      "question": "仅凭这些文字，能确定我尚未上传的印刷机照片的厂家和型号吗？",
+      "evidence_groups": []
+    }
+  ]
+}

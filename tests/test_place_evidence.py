@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from backend.amap import Amap, MapServiceError
-from backend.models import Expense, Stop, GuideSource, GuideDecision, cents, itinerary_expenses
+from backend.models import Expense, Stop, PlanningGuideSource, GuideDecision, cents, itinerary_expenses
 from backend.place_info import enrich_place
 from backend.itinerary_evidence import bind_stop_expenses, audit_guides
 from test_core import sample
@@ -185,7 +185,7 @@ def test_map_average_is_food_reference_not_a_ticket_price():
 
 def test_guide_audit_rejects_fabricated_quotes_and_wrong_activity_links():
     trip, itinerary, _ = sample()
-    trip.guides = [GuideSource(title='攻略', text='先去外滩看江景，再到豫园用餐。')]
+    trip.guides = [PlanningGuideSource(title='攻略', text='先去外滩看江景，再到豫园用餐。')]
     itinerary.guide_decisions = [
         GuideDecision(source_index=0, excerpt='先去外滩看江景', place_names=['外滩'], status='adopted', stop_ids=['a'], reason='安排了外滩'),
         GuideDecision(source_index=0, excerpt='先去外滩看江景', place_names=['外滩'], status='adopted', stop_ids=['b'], reason='错误关联'),
@@ -199,7 +199,7 @@ def test_guide_audit_rejects_fabricated_quotes_and_wrong_activity_links():
 
 def test_guide_without_trace_is_explicitly_unconfirmed_and_empty_guides_clear_trace():
     trip, itinerary, _ = sample()
-    trip.guides = [GuideSource(title='攻略', text='去外滩')]
+    trip.guides = [PlanningGuideSource(title='攻略', text='去外滩')]
     audit_guides(trip, itinerary)
     assert itinerary.guide_decisions[0].status == 'not_used'
     trip.guides = []
@@ -209,7 +209,7 @@ def test_guide_without_trace_is_explicitly_unconfirmed_and_empty_guides_clear_tr
 
 def test_partial_guide_places_cannot_all_be_claimed_as_adopted():
     trip, itinerary, _ = sample()
-    trip.guides = [GuideSource(title='攻略', text='先去外滩再去故宫。')]
+    trip.guides = [PlanningGuideSource(title='攻略', text='先去外滩再去故宫。')]
     itinerary.guide_decisions = [GuideDecision(source_index=0, excerpt='先去外滩再去故宫',
         place_names=['外滩', '故宫'], status='adopted', stop_ids=['a'], reason='安排外滩')]
     audit_guides(trip, itinerary)
@@ -219,7 +219,7 @@ def test_partial_guide_places_cannot_all_be_claimed_as_adopted():
 
 def test_guide_dishes_are_linked_to_actual_meal_recommendations():
     trip, itinerary, _ = sample()
-    trip.guides = [GuideSource(title='美食攻略', text='逛外滩后午餐尝试烤鸭。')]
+    trip.guides = [PlanningGuideSource(title='美食攻略', text='逛外滩后午餐尝试烤鸭。')]
     itinerary.days[0].stops.append(Stop(id='food', name='午餐餐馆', kind='meal', start='12:00', end='13:00', food_recommendations=['烤鸭']))
     itinerary.guide_decisions = [GuideDecision(source_index=0, excerpt='逛外滩后午餐尝试烤鸭',
         place_names=['外滩'], status='adopted', stop_ids=['a'], reason='保留游览和特色餐饮建议')]

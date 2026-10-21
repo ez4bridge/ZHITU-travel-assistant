@@ -25,6 +25,8 @@ def test_bundled_snapshot_preserves_upstream_sources_license_and_lock():
     for name, expected in provenance['files_sha256'].items():
         assert hashlib.sha256((vendor / name).read_bytes()).hexdigest() == expected, name
     assert 'Copyright (c) 2026 drfccv' in (vendor / 'LICENSE').read_text()
+    # Pin the dependency's requested extras too for the Python 3.11 bundled pip resolver.
+    assert 'pyjwt[crypto]==2.14.0' in (ROOT / 'tools' / 'rail-mcp-requirements.txt').read_text()
 
 
 def fake_install(monkeypatch, tmp_path, *, foreign_source=False, fail_pip=False):

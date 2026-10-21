@@ -1,148 +1,110 @@
-# 新成员运行与开发教程（Windows）
+# 安装与启动
 
-以下命令默认在**本项目根目录**的 PowerShell 中执行；不要在旁边的原 NVIDIA-TRAVEL 目录执行。每人 clone 一份代码，用各自的 `.env.local` 和本地数据库。
+选择下面一种方式即可。推荐使用便携版；两种方式都需要网络连接，并填写大模型和高德地图的 API 配置。
 
-## 1. 获取项目、准备环境
+## 一、便携版启动
 
-安装 Git 和 **Python 3.11 x64**。本项目锁文件以 Windows / Python 3.11 为基准；不要默认所有其他 Python 版本都已验证。Node 和仓颉可以使用项目局部环境，不要求修改系统版本。
+适用于 Windows 10／11 x64，无需安装 Python、Node 或其他运行环境。
+
+1. **解压程序。** 解压 `travel-assistant-windows-x64.zip`，打开其中的 `travel-assistant-windows` 文件夹。请保留完整目录结构，不要单独移动启动程序。
+2. **填写配置。** 根目录已提供密钥留空的 `.env.local`。双击“配置API.bat”打开它，按照下方“填写 API 配置”中的说明填写并保存。如果已有填好的配置文件，可以直接将它拖到“启动漫游.exe”上，程序会自动导入并启动。
+3. **启动使用。** 双击“启动漫游.exe”，等待浏览器自动打开。
+
+默认访问地址为 [http://127.0.0.1:7862/](http://127.0.0.1:7862/)。端口被占用时，程序会选择其他端口，请使用启动窗口显示的地址。
+
+关闭启动窗口后，服务仍会继续运行。结束使用时双击“停止运行.bat”；修改配置后双击“重启运行.bat”。向已运行的启动程序拖入配置文件，也会重启此便携版并应用新配置。
+
+便携版已包含研学资料和本地检索资源，无需另外下载或恢复。
+
+## 二、源码版启动
+
+需要 Windows x64、Python 3.11 和网络连接。将源码解压到独立文件夹，在该文件夹中打开 PowerShell。以下命令都在包含 `setup.bat` 和 `start.bat` 的文件夹中执行。
+
+### 1. 安装运行环境
+
+首次使用执行：
 
 ```powershell
-git clone <队长提供的仓库地址>
-cd <克隆得到的项目目录>
-python --version
 .\setup.bat
 ```
 
-把尖括号内容换成真实值，不要原样执行。`setup.bat` 调用根目录 `setup.ps1`，创建 `.venv`，安装 Python 锁定依赖，下载并校验项目专用 Node 22.23.3，执行前端 `npm ci` 与构建，最后在配置不存在时创建空白 `.env.local`。首次安装需要联网，不会带来队长机器上的密钥、数据库或历史。
+等待安装完成。安装程序会自动准备运行环境、页面和铁路查询服务，保留已填写的 `.env.local`；该文件缺失时会自动创建。
 
-若 `python` 指向别的版本，可明确指定已安装的 Python 3.11：
+根目录已提供密钥留空的 `.env.local`，打开后按照下方“填写 API 配置”中的说明填写并保存，无需复制或改名。
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Python "C:\你的Python311目录\python.exe" -Dev
-```
+### 2. 安装研学资源（使用历史研学时需要）
 
-此参数只对本次脚本生效。路径换成自己的解释器路径；安装脚本不会替你安装 Python。`-Dev` 明确补装测试依赖；当前完整锁文件本身也包含已验证的测试依赖。
+仅使用普通旅行时，可以跳过这一步。
 
-## 2. 填写本地配置
-
-用编辑器打开 `.env.local`。如果文件不存在，执行下面命令创建；**已有配置不要覆盖**：
+将 `travel-assistant-resources.zip` 解压，得到 `travel-assistant-resources` 文件夹，与源码文件夹并列放置。在应用停止时执行：
 
 ```powershell
-if (-not (Test-Path -LiteralPath .env.local)) { Copy-Item .env.example .env.local }
+.\.venv\Scripts\python.exe tools\restore_resources.py ..\travel-assistant-resources
+.\.venv\Scripts\python.exe -m pip install -r requirements-rag.txt
 ```
 
-| 设置 | 怎么填 | 需要体验什么 |
-|---|---|---|
-| `LLM_API_KEY` | 自己的模型 API Key，或队内获准使用的 Key | 生成/修改 |
-| `LLM_BASE_URL` | 当前示例为 `https://api.deepseek.com` | 模型服务地址 |
-| `LLM_MODEL` | 当前已验证 `deepseek-flash`；以所用账号实际可用模型为准 | 模型名，不是 Key ID |
-| `AMAP_API_KEY` | 高德“Web 服务”平台 Key | 地点/路线，也用于完整规划 |
-| `AMAP_SIGN_SECRET` | 上述 Web 服务 Key 对应的签名私钥；启用签名时填写 | Web 服务鉴权 |
-| `AMAP_WEB_KEY` | 高德“Web 端（JS API）”平台 Key | 浏览器底图 |
-| `AMAP_JS_SEC` | 上述 Web 端 Key 对应的安全密钥 | 浏览器地图代理鉴权 |
-| `VALIDATOR_BACKEND` | 首次可填 `python`；启用可选仓颉后用 `auto` | 规则检查，不需要模型 Key |
-| `PORT` | 默认 `7862` | 后端与生产页面端口 |
-| `RAIL_MCP_ENABLED` / `RAIL_MCP_PYTHON` | 新模板开启，现有配置保留；解释器路径可留空 | 可选铁路查询，见 [RAIL_MCP.md](RAIL_MCP.md) |
+资源包含19篇原文及本地检索所需文件。恢复程序会检查文件完整性，并将资源放到应用目录中。已有资源默认不覆盖，需要替换时，在第一条命令末尾加上 `--replace`。
 
-两个高德 Key 的平台和密钥类型不要混用。高德控制台若启用了额外限制，须与本机使用方式匹配。完整配置解释见 [CONFIGURATION.md](CONFIGURATION.md)。不要把真实值贴进共享文档、Git 或截图。
+日常启动不会重新下载模型。未安装本地检索依赖时，已恢复的原文仍可通过关键词检索使用。
 
-没有 Key 也可以打开已构建首页、运行不依赖外部 API 的测试和开发界面；不能完成真实规划/底图。换模型供应商要支持工具调用和 JSON 输出，其他供应商尚未验收。环境变量优先于 dotenv 中同名设置，修改 `.env.local` 后若仍不生效，检查当前终端是否设置了同名变量；不要打印密钥排查。
+### 3. 启动与停止
 
-## 3. 正常启动、关闭与首次检查
+启动应用：
 
 ```powershell
 .\start.bat
 ```
 
-保持启动窗口运行，访问 [http://127.0.0.1:7862/](http://127.0.0.1:7862/)。修改 PORT 后按新端口访问。关闭可在启动窗口 Ctrl+C，或者另开终端执行 `.\stop.bat`。重复启动会识别本项目，不必手工杀其他 Python 进程。
+打开 [http://127.0.0.1:7862/](http://127.0.0.1:7862/)，使用期间保持启动窗口运行。如果修改了配置中的 `PORT`，请使用对应端口的地址。
 
-在另一终端检查：
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:7862/api/health
-```
-
-`missing` 只表示必要配置是否为空，`capabilities` 只表示配置/校验器就绪情况；它们**没有探测 API 余额、Key 是否有效或配额**。确认全部填好后，手动生成一次单日方案，检查地点、道路路线、预算和未知提示。生成/修改会调用真实模型与高德，可能消耗额度。
-
-每个人的历史在自己的 `.runtime/plans.sqlite3`。空白历史是正常的，不必向队长索取数据库。
-
-## 4. 前后端开发模式
-
-终端 A：运行后端（代码修改后 Ctrl+C，再启动；默认无自动重载）。
+结束使用时执行：
 
 ```powershell
-.\.venv\Scripts\python.exe -m backend.main
+.\stop.bat
 ```
 
-终端 B：从根目录执行，临时把项目 Node 放在 PATH 首位：
+修改配置后重启：
 
 ```powershell
-$env:PATH = (Join-Path (Get-Location) '.tools\node') + ';' + $env:PATH
-$env:npm_config_cache = Join-Path (Get-Location) '.tools\npm-cache'
-Set-Location frontend
-npm.cmd run dev
+.\restart.bat
 ```
 
-打开 Vite 输出的地址（通常 `http://127.0.0.1:5173`），不要继续看 7862 的旧构建页面。修改 Vue/CSS 会热更新。`frontend/vite.config.ts` 代理 `/api` 和 `/_AMapService` 到 7862；如改后端端口，开发代理也要一致。
+## 填写 API 配置
 
-给其他人演示前，在终端 B 的 `frontend` 目录执行：
+所有 API 信息直接填写在程序根目录已提供的 `.env.local` 中，修改后重启生效。随包配置中的密钥均为空，服务地址、模型名称及其他选项保留默认值。便携版也可以将已有配置文件拖到启动程序上导入。
 
-```powershell
-npm.cmd run build
-```
+配置文件使用 UTF-8 编码，每行填写一项，格式为 `字段名=值`。导入时，未提供的字段保留原设置，不支持的字段忽略。
 
-再用 `start.bat` 启动/重启生产页面，刷新 7862。只改源码却不构建时，7862 不会自动展示新界面。更新仓库后，Python 依赖变化需要重新安装，前端锁文件变化需要 `npm ci`，前端源码变化需要重新 build；最省事可在根目录重跑 `setup.bat`，不会覆盖已存在的 `.env.local`。
-
-## 5. 测试命令
-
-根目录执行：
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe -m pip check
-```
-
-测试使用模拟模型/地图响应，不会调用付费模型。部分真实仓颉测试在可执行文件缺失时跳过，留意输出，不要将跳过当作仓颉验证通过。前端构建命令见上节。
-
-真实接口脚本仅在需要时运行（默认地址固定为 7862；改变端口需同步脚本）：
-
-```powershell
-.\.venv\Scripts\python.exe tools\live_check.py --mode walking --days 1
-```
-
-加 `--revise` 会再做一次模型修改，额外消耗请求；无需每次提交都跑。输出保存在忽略的 `.runtime` 下。
-
-## 6. 可选仓颉
-
-先完成 Python 版启动，再按需运行：
-
-```powershell
-.\.venv\Scripts\python.exe tools\download_cangjie.py
-.\cangjie\build.ps1
-.\.venv\Scripts\python.exe tools\check_cangjie.py
-```
-
-下载器获取并校验官方 Windows x64 SDK（约 284 MB），放在忽略的 `cangjie/.sdk`；编译产物在 `cangjie/bin`。PowerShell 如拦截脚本，可用 `powershell -NoProfile -ExecutionPolicy Bypass -File .\cangjie\build.ps1`，不必修改全局策略。
-
-将 `VALIDATOR_BACKEND=auto` 后重启，查看健康接口的 `capabilities.validator` 与 `validator_diagnostic`。一致性通过应显示 `cangjie`，否则自动用 Python。下载的是编译 SDK，**不是 AI 模型权重**。
-
-## 可选铁路查询
-
-12306 MCP 的固定版本源码、车站数据和许可证已经在 third_party，拉取本仓库即可取得。setup.bat 默认调用 tools/setup_rail_mcp.py 在独立虚拟环境安装哈希锁定依赖，无需另行克隆或安装 uv。新模板开启 RAIL_MCP_ENABLED，旧配置不覆盖；无需新的铁路 Key 或账号。依赖缺失时保留交通估算，主应用依赖不变。详见 [RAIL_MCP.md](RAIL_MCP.md)。
-
-表单先填写出发城市，再添加目的地。每城默认 1 天、可按半天调整，合计向上取整且最多 10 天，无需另填总天数；可勾选返程。市内方式控件暂时隐藏，新建默认步行。
-
-## 7. 常见问题
-
-| 现象 | 先查什么 |
+| 字段 | 填写内容与用途 |
 |---|---|
-| 首页 503 / 提示先构建 | `frontend/dist/index.html` 是否存在；重新运行 setup/build |
-| 前端改了没生效 | 是否打开旧的 7862 页面；开发用 Vite 地址，演示先 build |
-| 规划报错/超时 | `.env.local`、模型名/兼容能力、余额/配额、网络；不要无限重试 |
-| 地图空白但有行程 | Web Key/JS 安全密钥的对应关系、网络、根级代理；文字路线仍可看 |
-| health 显示 python | 可选仓颉缺失、设置为 python 或一致性失败；按诊断排查 |
-| npm 仍是 Node 16 | 在当前终端把项目 `.tools/node` 加入 PATH；无需卸载系统 Node |
-| 7862 被占用 | 用本项目 stop.bat；确认占用者后处理，或换 PORT 与开发代理 |
-| 拉取后旧历史加载失败 | 保留数据库，检查是否有人破坏了模型兼容性；不要直接删除历史 |
+| `LLM_API_KEY` | 大模型 API Key，用于生成、修改行程和问答 |
+| `LLM_BASE_URL`、`LLM_MODEL` | 与 Key 对应的 OpenAI 兼容接口地址和模型名称 |
+| `AMAP_API_KEY` | 高德“Web 服务”Key，用于地点、路线和天气查询 |
+| `AMAP_SIGN_SECRET` | 高德 Web 服务签名私钥，按控制台要求配置 |
+| `AMAP_WEB_KEY` | 高德“Web 端（JS API）”Key，用于显示地图 |
+| `AMAP_JS_SEC` | 与 Web 端 Key 对应的安全密钥 |
+| `QWEATHER_API_KEY`、`QWEATHER_API_HOST` | 可选的和风天气配置；Host 填控制台分配的域名，不含协议或路径 |
+| `GUIDE_SEARCH_API_KEY` | 出行参考使用的 DeepSeek 搜索／抓取 Key；大模型接口地址为官方 DeepSeek 时可留空，复用 `LLM_API_KEY` |
 
-提交前确认 `git status --short` 没有本地配置、数据库、SDK 或依赖目录。协作方式见 [COLLABORATION.md](COLLABORATION.md)。
+先填写大模型和高德配置，即可使用旅行规划和地图。铁路查询、本地研学检索无需额外 Key，模板中的其他选项保持默认即可。
+
+和风天气的两项同时填写时使用7天预报，否则使用高德预报。能够显示的日期以天气接口实际返回的预报为准。
+
+文本规划支持 OpenAI 兼容模型接口。照片讲解使用当前接入的 DeepSeek 图片输入能力；联网出行参考需要 DeepSeek 搜索／抓取能力，请根据要使用的功能选择服务。
+
+## 常见问题
+
+- **找不到 `start.bat`**：终端所在位置不对，请先进入源码文件夹，确认能看到该文件，再执行命令。
+- **浏览器提示拒绝连接**：便携版可双击“重启运行.bat”；源码版请确认启动窗口仍在运行。查看启动窗口的错误信息，并核对浏览器地址中的端口。
+- **页面提示缺少配置**：检查 `.env.local` 中对应字段是否填写，保存后重启。
+- **研学资料未就绪**：源码版请停止应用，按上面的步骤恢复资源后再启动；便携版请确认压缩包已完整解压。
+- **源码版铁路环境安装失败**：执行 `.\.venv\Scripts\python.exe tools\setup_rail_mcp.py` 重试。
+- **天气、地点或模型查询失败**：检查对应服务的配置、账户额度及网络连接。页面能够打开，并不代表外部查询服务已经连通。
+
+## 本机数据与备份
+
+行程、历史版本、出行参考和问答记录自动保存在本机，无需另外安装数据库。
+
+配置保存在根目录的 `.env.local`；使用记录与研学资源在源码版的 `.runtime` 或便携版的 `app/.runtime` 中。备份或更换程序前，请先停止应用，并保留这些文件和文件夹。配置文件含有个人 API 密钥，请妥善保管。
+
+[返回知途功能介绍](../README.md)

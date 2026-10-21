@@ -128,13 +128,13 @@ def test_structured_request_flows_through_api_and_reports_preference(monkeypatch
     from backend.amap import Amap
     from backend.validation import Validator
     request, itinerary, _ = stay_case('1')
-    async def generate(trip, amap, emit, previous=None, instruction='', rail=None):
+    async def generate(trip, amap, emit, previous=None, instruction='', rail=None, weather=None, weather_by_city=None):
         assert trip.city_route == ['北京']
         assert trip.destinations[0].preferred_days == Decimal('1')
         return itinerary.model_copy(deep=True)
     monkeypatch.setattr(main, 'generate_itinerary', generate)
     monkeypatch.setattr(main, 'store', Store(tmp_path / 'structured.sqlite3'))
-    monkeypatch.setattr(main, 'validator', Validator(preferred='python'))
+    monkeypatch.setattr(main, 'validator', Validator())
     monkeypatch.setattr(Amap, 'enrich', AsyncMock(return_value=[]))
     body = request.model_dump(mode='json')
     body.pop('destination')
@@ -166,7 +166,6 @@ async def test_agent_receives_selected_stay_preferences(monkeypatch):
         async def __aenter__(self): return self
         async def __aexit__(self, *args): pass
     monkeypatch.setattr(agent, 'AsyncOpenAI', lambda **kwargs: Client())
-    monkeypatch.setattr(agent, 'complete_model', complete)
     monkeypatch.setattr(settings, 'llm_key', 'test-key')
     monkeypatch.setattr(settings, 'amap_key', 'test-map-key')
     await agent.generate_itinerary(request, SimpleNamespace(), AsyncMock())

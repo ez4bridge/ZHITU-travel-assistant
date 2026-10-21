@@ -5,6 +5,34 @@ from decimal import Decimal
 from .models import Expense, GuideDecision, cents
 
 
+def normalize_ticket_quantities(trip, itinerary, only_day=None):
+    """Correct explicit headcounts repeated in per-person admission quantities.
+
+    An activity, matching party label and matching quantity are all required.
+    Keep ambiguous quantities and explicit repeated visits for manual review.
+    Only call on newly generated data, never implicitly rewrite saved history.
+    """
+    changes = []
+    if trip.people <= 1:
+        return changes
+    headcount = re.compile(rf'(?<!\d){trip.people}\s*(?:人|位)(?!次)')
+    repeat_units = re.compile(r'(?:\d+|[两二三四五六七八九十]+)\s*(?:次|场|天|日|趟|张)')
+    for index, day in enumerate(itinerary.days):
+        if only_day is not None and index != only_day:
+            continue
+        sights = {s.id: s for s in day.stops if s.kind == 'sight'}
+        for expense in day.expenses:
+            if (expense.category != 'ticket' or expense.basis != 'person'
+                    or expense.quantity != trip.people or expense.stop_id not in sights
+                    or not headcount.search(expense.label)
+                    or repeat_units.search(expense.label + ' ' + expense.note)):
+                continue
+            expense.quantity = 1
+            expense.note = (f'已纠正重复人数：按单价×{trip.people}人计算，单位数量为1；' + expense.note)[:500]
+            changes.append(f'第{index + 1}天·{sights[expense.stop_id].name}：纠正门票重复计人数，保留原估算单价。')
+    return changes
+
+
 def bind_stop_expenses(itinerary, only_day=None):
     categories = {'food': 'meal', 'ticket': 'sight', 'hotel': 'hotel'}
     for index, day in enumerate(itinerary.days):

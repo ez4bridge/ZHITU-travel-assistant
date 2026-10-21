@@ -1,0 +1,72 @@
+/* Shared page layout and hero motion; full-page scenery lives in JourneyBackdrop.vue. */
+html[data-roam-theme="city"] { background: #f8f9f3; }
+html[data-roam-theme="city"] .app-shell { position: relative; isolation: isolate; }
+.motion-control { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid #e1e9dc; border-radius: 7px; color: #6c826b; font-size: 10px; white-space: nowrap; }
+.motion-control:disabled { opacity: .7; }
+.city-scene > svg { box-shadow: 0 12px 32px #476a5010; }
+
+/* Animate individual scenery elements; buildings and HTML labels remain still. */
+html[data-roam-motion="on"] .scene-cloud-one { animation: roam-cloud-one 9s linear -3s infinite alternate; }
+html[data-roam-motion="on"] .scene-cloud-two { animation: roam-cloud-two 12s linear -5s infinite alternate; }
+html[data-roam-motion="on"] .scene-ripple { animation: roam-ripple 4s ease-in-out -1s infinite alternate; }
+html[data-roam-motion="on"] .scene-ripple-two { animation-duration: 5s; animation-delay: -3s; }
+html[data-roam-motion="on"] .scene-ripple-three { animation-duration: 6s; animation-delay: -2s; }
+html[data-roam-motion="on"] .scene-boat { animation: roam-boat 7s ease-in-out -2s infinite alternate; }
+html[data-roam-motion="on"] .scene-birds { animation: roam-birds 6s ease-in-out -2s infinite alternate; }
+html[data-roam-motion="on"] .scene-sun-glow { animation: roam-sun 6s ease-in-out -2s infinite alternate; }
+.scene-tree { transform-box: fill-box; transform-origin: 50% 100%; }
+html[data-roam-motion="on"] .scene-tree-one { animation: roam-tree 3.8s ease-in-out -1s infinite alternate; }
+html[data-roam-motion="on"] .scene-tree-two { animation: roam-tree 4.5s ease-in-out -3s infinite alternate; }
+html[data-roam-ambient="paused"] .scene-ambient { animation-play-state: paused; }
+@keyframes roam-cloud-one { from { transform: translateX(-32px); } to { transform: translateX(60px); } }
+@keyframes roam-cloud-two { from { transform: translateX(28px); } to { transform: translateX(-32px); } }
+@keyframes roam-ripple { from { transform: translateX(-18px); opacity: .35; } to { transform: translateX(26px); opacity: 1; } }
+@keyframes roam-boat { from { transform: translate(-25px, 2px); } to { transform: translate(52px, -5px); } }
+@keyframes roam-birds { from { transform: translate(-8px, 3px); } to { transform: translate(42px, -14px); } }
+@keyframes roam-tree { from { transform: rotate(-3.5deg); } to { transform: rotate(4deg); } }
+@keyframes roam-sun { from { opacity: .09; } to { opacity: .23; } }
+
+html[data-roam-motion="on"] .hero.appearance-intro > .hero-copy { animation: roam-intro 450ms cubic-bezier(.2,.7,.3,1) both; }
+html[data-roam-motion="on"] .hero.appearance-intro > .city-scene { animation: roam-intro 450ms 60ms cubic-bezier(.2,.7,.3,1) both; }
+@keyframes roam-intro { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
+html[data-roam-motion="on"] .primary-button,
+html[data-roam-motion="on"] .secondary-button,
+html[data-roam-motion="on"] .day-tabs button,
+html[data-roam-motion="on"] .motion-control,
+html[data-roam-motion="on"] .itinerary-stop { transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease, background-color 150ms ease; }
+html[data-roam-motion="on"] .primary-button:active:not(:disabled),
+html[data-roam-motion="on"] .secondary-button:active:not(:disabled),
+html[data-roam-motion="on"] .day-tabs button:active,
+html[data-roam-motion="on"] .motion-control:active:not(:disabled) { transform: scale(.98); }
+@media (hover: hover) and (pointer: fine) {
+  html[data-roam-motion="on"] .primary-button:hover:not(:disabled) { box-shadow: 0 7px 18px #147b7120; transform: translateY(-1px); }
+  html[data-roam-motion="on"] .secondary-button:hover:not(:disabled),
+  html[data-roam-motion="on"] .motion-control:hover:not(:disabled) { border-color: #94b28b; box-shadow: 0 3px 10px #486d3c0b; }
+  html[data-roam-motion="on"] .itinerary-stop:not(.active):hover { border-color: #a4bea2; box-shadow: 0 3px 12px #355d4210; }
+  html[data-roam-motion="on"] .hero-link > svg { transition: transform 180ms ease; }
+  html[data-roam-motion="on"] .hero-link:hover > svg { transform: translate(2px, -2px); }
+}
+html[data-roam-motion="on"] .appearance-modal-enter-active,
+html[data-roam-motion="on"] .appearance-modal-leave-active { transition: opacity 200ms ease; }
+html[data-roam-motion="on"] .appearance-modal-enter-from,
+html[data-roam-motion="on"] .appearance-modal-leave-to { opacity: 0; }
+html[data-roam-motion="on"] .appearance-modal-enter-active > section,
+html[data-roam-motion="on"] .appearance-modal-leave-active > section { transition: transform 200ms ease; }
+html[data-roam-motion="on"] .appearance-modal-enter-from > section,
+html[data-roam-motion="on"] .appearance-modal-leave-to > section { transform: translateY(8px); }
+html[data-roam-motion="on"] .source-backdrop.appearance-modal-enter-from > section,
+html[data-roam-motion="on"] .source-backdrop.appearance-modal-leave-to > section { transform: translateX(20px); }
+html[data-roam-motion="on"] .appearance-modal-leave-active { pointer-events: none; }
+/* Stop motion without hiding genuine loading text or changing request state. */
+html[data-roam-motion="off"] .app-shell *,
+html[data-roam-motion="off"] .source-backdrop,
+html[data-roam-motion="off"] .source-backdrop * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+@media (max-width: 520px) {
+  .motion-control { font-size: 10px; padding: 5px 7px; }
+  /* SVG coordinates keep small movements independent of the screen width. */
+  @keyframes roam-cloud-one { from { transform: translateX(-20px); } to { transform: translateX(42px); } }
+  @keyframes roam-boat { from { transform: translate(-16px, 2px); } to { transform: translate(35px, -4px); } }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scene-ambient { animation: none !important; transform: none !important; }
+}

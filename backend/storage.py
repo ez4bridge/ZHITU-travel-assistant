@@ -33,6 +33,8 @@ class Store:
     def delete(self, plan_id: str):
         with self.connect() as db:
             db.execute('DELETE FROM plans WHERE id = ?', (plan_id,))
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='place_guides'").fetchone():
+                db.execute('DELETE FROM place_guides WHERE plan_id = ?', (plan_id,))
 
     def list(self):
         with self.connect() as db:

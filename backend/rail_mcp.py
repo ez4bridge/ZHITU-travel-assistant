@@ -21,7 +21,7 @@ class RailMcpClient:
                  'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
                  'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP'}
         env = {name: value for name, value in os.environ.items() if name in names}
-        env.update({'PYTHONUNBUFFERED': '1', 'TZ': 'Asia/Shanghai', 'DEBUG': 'false', 'LOG_LEVEL': 'ERROR'})
+        env.update({'PYTHONUNBUFFERED': '1', 'PYTHONUTF8': '1', 'TZ': 'Asia/Shanghai', 'DEBUG': 'false', 'LOG_LEVEL': 'ERROR'})
         self.process = await asyncio.create_subprocess_exec(str(self.python), str(ROOT / 'tools' / 'rail_mcp_stdio.py'),
             cwd=ROOT / '.runtime', env=env, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL, limit=2000000)

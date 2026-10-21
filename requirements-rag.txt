@@ -1,0 +1,2 @@
+# Optional CPU retrieval; the base application also works without these packages.
+-r requirements-rag-lock-windows-py311.txt

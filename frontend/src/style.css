@@ -17,11 +17,16 @@ footer{display:flex;align-items:center;gap:22px;border-top:1px solid var(--line)
 /* Keep the restrained palette, with readable contrast for functional content. */
 .hero-copy>p{color:#657969}.field>span{font-size:12px}.input-wrap input{font-size:13px}.field textarea{font-size:12px}.form-note{color:#788875;font-size:10px}.stop-body h4{font-size:14px}.stop-body p{font-size:11px;color:#677a61}.stop-meta>span:first-child{font-size:10px;color:#6d815f}.kind-tag{font-size:9px}.poi-note{font-size:9px;color:#6b855b}.poi-note.unknown{color:#977944}.stop-address{font-size:9px;color:#7c8c6c}.transfer{font-size:9px;color:#72865c}.plan-heading p{font-size:12px;color:#667961}.mini-heading h3{font-size:13px}.cost-list>div{font-size:11px}.cost-list span{color:#758762}.cost-list strong{color:#5f7950}.validation-status strong{font-size:11px}.validation-status p{font-size:10px;color:#7b9166}.issues-list{font-size:10px;color:#94774d}.unknown-list{font-size:10px;color:#7c8e67}.subtle-note,.map-footnote{color:#81936d;font-size:9px}.map-pin>span{display:block;transform:rotate(45deg)}
 
+/* Keep map and on-demand references together at all existing breakpoints. */
+.journey-sidebar{min-width:0;position:sticky;top:18px;display:flex;flex-direction:column;gap:17px}.journey-sidebar>.map-panel{position:relative;top:0;grid-row:auto}@media(max-width:1150px){.journey-sidebar{position:relative;top:0;grid-row:1}}@media(max-width:780px){.journey-sidebar{position:sticky;top:15px;grid-row:auto}}@media(max-width:520px){.journey-sidebar{position:relative;top:0;grid-row:1}}
+
+
 /* Nationwide journey controls and estimated intercity transport. */
 .field-hint{display:block;font-size:10px;color:#788875;line-height:1.8;margin-top:6px}
 .input-wrap select{width:100%;min-width:0;border:0;background:transparent;color:inherit;padding:12px 0;font-size:12px;outline-offset:3px}
-.journey-options{display:flex;flex-direction:column;gap:10px;margin:-3px 0 20px;font-size:11px;color:#657969;grid-column:1/-1}
-.journey-options label{display:flex;align-items:center;gap:7px}.journey-options input{accent-color:var(--green)}
+.journey-options{display:flex;flex-direction:column;gap:10px;margin:-3px 0 20px;font-size:12px;color:#657969;grid-column:1/-1;min-width:0}
+.journey-options label{display:flex;align-items:center;gap:7px;line-height:1.7;cursor:pointer}.journey-options input{accent-color:var(--green);flex-shrink:0}.journey-options input:disabled{cursor:default}
+.journey-options-hint{font-size:11px;line-height:1.8;color:#86927d;margin:0}
 .intercity-card{padding:20px;margin-bottom:18px}.intercity-intro{font-size:11px;color:#758762;line-height:1.9;margin-top:10px}
 .intercity-leg{padding:14px 0;border-top:1px solid var(--line);margin-top:12px}.intercity-leg:last-child{padding-bottom:0}
 .intercity-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
@@ -74,11 +79,3 @@ footer{display:flex;align-items:center;gap:22px;border-top:1px solid var(--line)
 .guide-evidence blockquote { margin: 6px 0; padding-left: 10px; border-left: 2px solid var(--line); color: var(--muted); font-size: 11px; }
 @media (max-width: 600px) { .stop-facts { margin-left: 10px; } }
 @media (max-width: 600px) { .route-choices { margin-left: 10px; } .plan-actions { align-items: stretch; flex-direction: column; } .plan-actions small { flex: 0 1 auto; } }
-
-.budget-modal { border: 0; margin: auto; color: var(--text); width: calc(100% - 32px); }
-.budget-modal::backdrop { background: #23413055; backdrop-filter: blur(5px); }
-.budget-summary { font-size: 12px; line-height: 1.8; margin: 12px 0; }
-.budget-detail-group { font-size: 11px; line-height: 1.8; margin: 16px 0; overflow-wrap: anywhere; }
-.budget-detail-group article { border-top: 1px solid var(--line); padding: 10px 0; }
-.budget-detail-group small { display: block; font-size: 9px; color: var(--muted); }
-.budget-group-total { display: block; color: var(--muted); margin-bottom: 8px; }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import type { Stop, Expense, CostLine } from '../types'
-defineProps<{ stop: Stop; expenses: Expense[]; costs?: CostLine[] }>()
+import type { Stop, Expense } from '../types'
+import { expenseFormula } from '../expenseFormula'
+defineProps<{ stop: Stop; expenses: Expense[]; people: number }>()
 const names: Record<string, string> = { ticket: '门票', food: '餐饮', hotel: '住宿', other: '其他' }
 </script>
 
@@ -9,8 +10,7 @@ const names: Record<string, string> = { ticket: '门票', food: '餐饮', hotel:
     <p v-if="stop.kind === 'meal' && stop.food_recommendations?.length">推荐尝试：{{ stop.food_recommendations.join('、') }}（菜品供应尚未核实）</p>
     <p v-if="stop.kind === 'meal' && stop.food_reference">高德特色信息：{{ stop.food_reference }}（地图参考）</p>
     <p v-if="stop.anchor_note">{{ stop.anchor_note }}<span v-if="stop.location_status === 'verified'"> · 通勤点：{{ stop.matched_name }}</span></p>
-    <p v-for="(cost, i) in (costs?.length ? [] : expenses)" :key="i">{{ names[cost.category] || cost.category }}估算：¥{{ cost.unit_cost }} / {{ cost.basis === 'person' ? '人' : '全员' }}<span v-if="cost.quantity > 1"> × {{ cost.quantity }} 份</span><span v-if="cost.note.includes('分摊')">（日预算分摊）</span></p>
-    <p v-for="(cost, i) in costs || []" :key="'total-' + i">计入总额：¥{{ (cost.subtotal_cents / 100).toFixed(2) }}（¥{{ cost.unit_cost }} × {{ cost.quantity }} 次<span v-if="cost.basis === 'person'"> × {{ cost.people_multiplier }} 人</span>）</p>
+    <p v-for="(cost, i) in expenses" :key="i">{{ names[cost.category] || cost.category }}估算：{{ expenseFormula(cost, people) }}<span v-if="cost.note.includes('分摊')">（日预算分摊）</span></p>
     <p v-if="!expenses.length && (stop.kind === 'sight' || stop.kind === 'meal')">{{ stop.kind === 'sight' ? '门票' : '餐饮' }}：暂无对应费用参考，不视为免费</p>
     <p v-if="stop.opening_hours">{{ stop.opening_hours_scope === 'area' ? '区域营业参考' : '营业参考' }}：{{ stop.opening_hours }}</p>
     <p v-else-if="stop.opening_hours_today">查询当天营业参考：{{ stop.opening_hours_today }}（不代表出行日）</p>

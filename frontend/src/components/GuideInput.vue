@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { GuideSource } from '../types'
-const sources = defineModel<GuideSource[]>({ default: () => [] })
+import type { PlanningGuideSource } from '../types'
+const sources = defineModel<PlanningGuideSource[]>({ default: () => [] })
 const mode = defineModel<'prefer' | 'inspiration'>('mode', { default: 'prefer' })
 </script>
 

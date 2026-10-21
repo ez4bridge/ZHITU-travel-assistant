@@ -77,7 +77,7 @@ def test_route_duration_rounds_up_and_unknown_is_not_passed():
 @pytest.mark.asyncio
 async def test_recheck_revision_recomputes_costs_routes_and_errors():
     request, itinerary, routes = sample()
-    service = Validator(preferred='python')
+    service = Validator()
     routes[0].duration_s = 3600
     assert (await service.validate(request, itinerary, routes)).errors
     itinerary.days[0].stops[1].start = '11:00'
@@ -86,54 +86,12 @@ async def test_recheck_revision_recomputes_costs_routes_and_errors():
     assert not report.errors and report.total_cents == 9000
 
 
-@pytest.mark.asyncio
-async def test_missing_cangjie_falls_back(tmp_path):
-    service = Validator(executable=tmp_path / 'missing.exe')
-    assert (await service.validate(*sample())).backend == 'python'
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize('failure', ['crash', 'timeout', 'malformed', 'parity'])
-async def test_cangjie_failures_do_not_break_python(tmp_path, failure):
-    exe = tmp_path / 'validator.exe'; exe.write_bytes(b'fake binary')
-    data = normalized_input(*sample())
-    fixture = tmp_path / 'fixtures.json'
-    fixture.write_text(json.dumps([{'name': 'valid', 'input': data}]), encoding='utf-8')
-    service = Validator(executable=exe, fixtures=fixture)
-    if failure == 'parity':
-        service.call_cangjie = AsyncMock(return_value={**validate_core(data), 'status': 'passed'})
-    else:
-        service.call_cangjie = AsyncMock(side_effect={'crash': RuntimeError('crash'), 'timeout': asyncio.TimeoutError(),
-                                                      'malformed': json.JSONDecodeError('bad', '', 0)}[failure])
-    report = await service.validate(*sample())
-    assert report.backend == 'python' and report.total_cents == 33150
-    assert '回退' in report.diagnostic
 
 
-@pytest.mark.asyncio
-async def test_cangjie_runtime_failure_after_parity_falls_back(tmp_path):
-    exe = tmp_path / 'validator.exe'; exe.write_bytes(b'fake binary')
-    data = normalized_input(*sample())
-    fixture = tmp_path / 'fixtures.json'; fixture.write_text(json.dumps([{'name': 'valid', 'input': data}]))
-    service = Validator(executable=exe, fixtures=fixture)
-    service.call_cangjie = AsyncMock(side_effect=[validate_core(data), RuntimeError('runtime crash')])
-    report = await service.validate(*sample())
-    assert report.backend == 'python' and '运行失败' in report.diagnostic
-    assert not await service.ready()
-    assert service.call_cangjie.await_count == 2
 
 
-@pytest.mark.asyncio
-async def test_fixture_changes_invalidate_native_approval(tmp_path):
-    exe = tmp_path / 'validator.exe'; exe.write_bytes(b'fake binary')
-    data = normalized_input(*sample())
-    fixture = tmp_path / 'fixtures.json'; fixture.write_text(json.dumps([{'name': 'valid', 'input': data}]))
-    service = Validator(executable=exe, fixtures=fixture)
-    service.call_cangjie = AsyncMock(return_value=validate_core(data))
-    assert await service.ready()
-    fixture.write_text('[]')
-    assert not await service.ready()
-    assert (await service.validate(*sample())).backend == 'python'
 
 
 @pytest.mark.asyncio
@@ -142,13 +100,15 @@ async def test_model_coordinates_cannot_be_trusted_and_search_is_city_limited(mo
     seen = []
     amap = Amap('上海')
     async def mock_request(path, params):
+        if path == '/v3/config/district':
+            return {'count': '1', 'districts': [{'name': '上海市', 'adcode': '310000', 'level': 'province'}]}
         seen.append(params)
         return {'pois': []}
     amap.request = mock_request
     stop = itinerary.days[0].stops[0]
     await amap.resolve(stop)
     assert stop.location is None and stop.location_status == 'unknown' and not stop.poi_id
-    assert seen[0]['city'] == '上海' and seen[0]['citylimit'] == 'true'
+    assert seen[0]['city'] == '310000' and seen[0]['citylimit'] == 'true'
     await amap.close()
 
 
@@ -208,8 +168,8 @@ def test_safe_errors_mask_all_credentials(monkeypatch):
 async def test_two_requests_keep_separate_results(monkeypatch, tmp_path):
     import backend.main as main
     monkeypatch.setattr(main, 'store', Store(tmp_path / 'concurrent.sqlite3'))
-    monkeypatch.setattr(main, 'validator', Validator(preferred='python'))
-    async def fake_generate(request, amap, emit, previous=None, instruction='', rail=None):
+    monkeypatch.setattr(main, 'validator', Validator())
+    async def fake_generate(request, amap, emit, previous=None, instruction='', rail=None, weather=None, weather_by_city=None):
         await asyncio.sleep(.01)
         itinerary = sample()[1]
         itinerary.title = request.destination
@@ -249,22 +209,6 @@ async def test_stream_disconnect_cancels_inflight_work(monkeypatch):
     assert cancelled.is_set()
 
 
-@pytest.mark.asyncio
-async def test_native_cangjie_unicode_and_malformed_json():
-    executable = Path(__file__).resolve().parents[1] / 'cangjie' / 'bin' / 'validator.exe'
-    if not executable.is_file():
-        pytest.skip('Optional native module not built')
-    service = Validator(executable=executable, preferred='auto')
-    if not await service.ready():
-        pytest.skip('Optional native runtime unavailable: ' + service.diagnostic)
-    data = normalized_input(*sample())
-    data['unknowns'].append({'code': 'utf8', 'message': '上海+\"\\\n🏞', 'day_index': None, 'stop_id': None})
-    process = await asyncio.create_subprocess_exec(str(executable), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE)
-    output, _ = await process.communicate(json.dumps(data, ensure_ascii=True).encode())
-    assert process.returncode == 0 and json.loads(output) == validate_core(data)
-    process = await asyncio.create_subprocess_exec(str(executable), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-    output, _ = await process.communicate(b'{malformed input')
-    assert process.returncode != 0 and not output
 
 
 def test_blank_destination_and_revision_rejected():
@@ -295,7 +239,6 @@ async def test_malformed_model_json_gets_one_bounded_repair(monkeypatch, repair_
         async def __aenter__(self): return self
         async def __aexit__(self, *args): pass
     monkeypatch.setattr(agent, 'AsyncOpenAI', lambda **kwargs: FakeClient())
-    monkeypatch.setattr(agent, 'complete_model', complete)
     monkeypatch.setattr(settings, 'llm_key', 'fake')
     monkeypatch.setattr(settings, 'amap_key', 'fake')
     emit = AsyncMock()

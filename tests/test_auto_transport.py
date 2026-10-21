@@ -68,7 +68,7 @@ def test_manual_selection_is_saved_without_version_and_preserved_on_auto_refresh
     import backend.main as main
     store = Store(tmp_path / 'plans.sqlite3')
     monkeypatch.setattr(main, 'store', store)
-    monkeypatch.setattr(main, 'validator', Validator(preferred='python'))
+    monkeypatch.setattr(main, 'validator', Validator())
     original = saved_plan(store)
     monkeypatch.setattr(Amap, 'enrich', AsyncMock(return_value=[r.model_copy(deep=True) for r in original.routes]))
     with TestClient(main.app) as client:

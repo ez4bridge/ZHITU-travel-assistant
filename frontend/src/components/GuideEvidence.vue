@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Landmark } from 'lucide-vue-next'
-import type { GuideSource, GuideDecision, Stop } from '../types'
-const props = defineProps<{ guides: GuideSource[]; decisions: GuideDecision[]; stops: Stop[] }>()
+import type { PlanningGuideSource, GuideDecision, Stop } from '../types'
+const props = defineProps<{ guides: PlanningGuideSource[]; decisions: GuideDecision[]; stops: Stop[] }>()
 const labels = { adopted: '已采纳', adjusted: '调整后采纳', not_used: '未落实' }
 const label = (decision: GuideDecision) => decision.status === 'not_used' && /不能确认已采纳|没有提供可核对/.test(decision.reason) ? '未能核对' : labels[decision.status]
 const stopName = (id: string) => props.stops.find(stop => stop.id === id)?.name || ''

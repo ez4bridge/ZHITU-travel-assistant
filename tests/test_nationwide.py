@@ -152,9 +152,14 @@ async def test_city_cache_and_poi_ids_never_cross_city_boundaries():
     service = Amap(['上海', '杭州'])
     seen = []
     async def fake_request(path, params):
+        entries = {'上海': ('310000', 'province'), '杭州': ('330100', 'city')}
+        if path == '/v3/config/district':
+            code, level = entries[params['keywords']]
+            return {'count': '1', 'districts': [{'name': params['keywords'] + '市', 'adcode': code, 'level': level}]}
         seen.append(params)
-        return {'pois': [{'id': params['city'], 'name': '人民公园', 'cityname': params['city'] + '市',
-                          'location': '120,30'}, {'id': 'wrong', 'name': '人民公园', 'cityname': '成都',
+        name = next(name for name, (code, _) in entries.items() if code == params['city'])
+        return {'pois': [{'id': name, 'name': '人民公园', 'cityname': name + '市',
+                          'adcode': params['city'], 'location': '120,30'}, {'id': 'wrong', 'name': '人民公园', 'cityname': '成都',
                                                 'location': '104,30'}]}
     service.request = fake_request
     try:
@@ -201,8 +206,8 @@ async def test_multicity_generate_revise_and_history_keep_independent_costs(monk
     from backend.validation import Validator
     request, original, _ = nationwide()
     monkeypatch.setattr(main, 'store', Store(tmp_path / 'national.sqlite3'))
-    monkeypatch.setattr(main, 'validator', Validator(preferred='python'))
-    async def fake_generate(trip, amap, emit, previous=None, instruction='', rail=None):
+    monkeypatch.setattr(main, 'validator', Validator())
+    async def fake_generate(trip, amap, emit, previous=None, instruction='', rail=None, weather=None, weather_by_city=None):
         assert amap.cities == ['上海', '杭州', '苏州']
         itinerary = original.model_copy(deep=True)
         if previous:
@@ -228,7 +233,7 @@ async def test_multicity_generate_revise_and_history_keep_independent_costs(monk
 
 def test_nationwide_fixture_contract():
     from pathlib import Path
-    cases = json.loads((Path(__file__).resolve().parents[1] / 'cangjie/fixtures.json').read_text(encoding='utf-8'))
+    cases = json.loads((Path(__file__).resolve().parents[1] / 'tests/fixtures/validation_cases.json').read_text(encoding='utf-8'))
     for case in cases:
         data = copy.deepcopy(case['input'])
         result = validate_core(data)

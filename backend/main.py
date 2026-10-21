@@ -1,4 +1,7 @@
 import asyncio
+import base64
+import binascii
+import time
 import json
 import logging
 import os
@@ -10,30 +13,41 @@ from urllib.parse import urlsplit
 from time import monotonic
 
 from fastapi import FastAPI, HTTPException, Request, Query
-from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
+from fastapi.responses import StreamingResponse, FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import settings, ROOT
-from .models import TripRequest, PlanRecord, RevisionRequest, RouteSelection
+from .models import TripRequest, PlanRecord, RevisionRequest, RouteSelection, StudyQuestion, PhotoQuestion, ConversationCreate, GuideQuery
 from .amap import Amap
 from .agent import generate_itinerary
 from .storage import Store
 from .validation import validator
 from .cities import city_catalog
 from .railway import Railway
-from .planning import repair_schedule, recost_all, same_activity_structure
+from .planning import repair_schedule, recost_all
 from .locality import prepare_accommodation
-from .itinerary_evidence import bind_stop_expenses, audit_guides
+from .itinerary_evidence import bind_stop_expenses, audit_guides, normalize_ticket_quantities
 from .meals import align_meals
-from .budget import reconcile_expenses, budget_instruction
 from .build_info import source_fingerprint
-from .generation_batches import task_limits
+from .conversation import ConversationStore, ConversationError, context_for, encoded, turn_memory
+from .qa_usage import UsageCollector
+from .photo_study import answer_photo, image_type
+from .weather import WeatherService, forecast_trip, normalize_city
+from .map_region import resolve_map_region
+from .place_guide import GuideService, GuideStore
+from .knowledge import KnowledgeBase
+from .study_agent import answer_study, generate_study_plan, plan_places, update_study_request
 
 BUILD_ID = source_fingerprint()
 STARTED_AT = datetime.now(timezone.utc).isoformat()
 
 store = Store()
+knowledge = KnowledgeBase(settings.study_corpus_dir)
+conversations = ConversationStore()
+weather_service = WeatherService()
+guide_service = GuideService()
+guide_store = GuideStore()
 
 
 @asynccontextmanager
@@ -42,9 +56,11 @@ async def lifespan(app):
     manages_pid = os.getenv('TRAVEL_SERVER_PROCESS') == '1'
     if manages_pid:
         pid_file.write_text(str(os.getpid()))
+    knowledge.retriever().start_background()
     try:
         yield
     finally:
+        await knowledge.aclose()
         if manages_pid and pid_file.exists() and pid_file.read_text().strip() == str(os.getpid()):
             pid_file.unlink()
 
@@ -52,7 +68,7 @@ async def lifespan(app):
 app = FastAPI(title='漫游 Travel Assistant', version='0.1.0', lifespan=lifespan)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', '[::1]', 'testserver', 'test'])
 _active_tasks = 0
-_metrics = {'completed': 0, 'failed': 0, 'cancelled': 0, 'last_duration_s': 0.0, 'last_phase_seconds': {}}
+_metrics = {'completed': 0, 'failed': 0, 'cancelled': 0, 'last_duration_s': 0.0}
 _last_failure = None
 
 
@@ -69,13 +85,17 @@ async def safe_exception(request, error):
     return JSONResponse(status_code=500, content={'detail': settings.safe_error(error)})
 
 
+@app.exception_handler(ConversationError)
+async def conversation_error(request, error):
+    return JSONResponse(status_code=error.status, content={'detail': str(error)})
+
+
 @app.get('/api/health')
 async def health():
-    ready = await validator.ready()
     return {'app_id': 'travel-assistant', 'status': 'ok', 'model': settings.llm_model,
             'capabilities': {'planning': bool(settings.llm_key and settings.amap_key), 'map': bool(settings.amap_web_key and settings.amap_js_sec),
                              'railway': settings.rail_mcp_enabled and settings.rail_mcp_python.is_file(),
-                             'routing': bool(settings.amap_key), 'validator': 'cangjie' if ready else 'python'},
+                             'routing': bool(settings.amap_key), 'validator': 'python'},
             'missing': [name for name, value in [('LLM_API_KEY', settings.llm_key), ('AMAP_API_KEY', settings.amap_key),
                        ('AMAP_WEB_KEY', settings.amap_web_key), ('AMAP_JS_SEC', settings.amap_js_sec)] if not value],
             'validator_diagnostic': validator.diagnostic, 'tasks': {'active': _active_tasks, **_metrics},
@@ -96,6 +116,13 @@ async def city_suggestions(query: str = Query(default='', max_length=40)):
         return await city_catalog.search(query)
     except RuntimeError:
         raise HTTPException(503, '城市建议暂不可用，可直接输入城市名称') from None
+
+
+@app.get('/api/map-region')
+async def map_region(city: str = Query(..., min_length=1, max_length=40)):
+    if not city.strip():
+        raise HTTPException(422, '请填写目的地行政区名称')
+    return await resolve_map_region(city.strip())
 
 
 @app.get('/_AMapService/{path:path}')
@@ -125,26 +152,234 @@ async def plans():
 async def get_plan(plan_id):
     plan = store.get(plan_id)
     if not plan:
-        raise HTTPException(404, '没有找到这份行程')
+        raise HTTPException(404, '没有找到这份行程；关联行程已删除的对话请新建会话')
     return plan
 
 
 @app.post('/api/plans/{plan_id}/validate')
 async def validate_plan(plan_id):
     plan = await get_plan(plan_id)
-    return await validator.validate(plan.request, plan.itinerary, plan.routes)
+    return await validator.validate(plan.request, plan.itinerary, plan.routes, plan.study_context)
 
 
-def stream_plan(request: Request, trip: TripRequest, previous=None, instruction='', refresh=False, day_index=None):
+@app.post('/api/plans/{plan_id}/weather')
+async def retry_weather(plan_id: str, city: str = Query(..., min_length=1, max_length=40)):
+    plan = await get_plan(plan_id)
+    selected = next((name for name in plan.request.city_route if normalize_city(name) == normalize_city(city)), None)
+    if selected is None:
+        raise HTTPException(422, '只能重新查询本行程目的地城市的天气')
+    trip = plan.request.model_copy(update={'destination': selected, 'destinations': []})
+    amap = Amap(selected)
+    try:
+        # A display-only result: do not rewrite the weather used by this plan's Agent.
+        return await weather_service.forecast(trip, amap, force=True)
+    finally:
+        await amap.close()
+
+
+@app.get('/api/plans/{plan_id}/place-guides')
+async def place_guides(plan_id: str):
+    await get_plan(plan_id)
+    return guide_store.list(plan_id)
+
+
+@app.post('/api/plans/{plan_id}/stops/{stop_id}/guide')
+async def place_guide(plan_id: str, stop_id: str, body: GuideQuery, request: Request):
+    plan = await get_plan(plan_id)
+    selected = [(day.date, stop) for day in plan.itinerary.days for stop in day.stops if stop.id == stop_id]
+    if len(selected) != 1:
+        raise HTTPException(404, '没有找到这份行程中的唯一地点')
+    visit_date, stop = selected[0]
+    if stop.kind != 'sight' or not stop.poi_id or stop.location_status != 'verified':
+        raise HTTPException(422, '出行参考目前支持已核实地点的景点活动')
+    saved = guide_store.get(plan_id, stop_id)
+    if saved and not body.refresh:
+        return saved
+    key = (plan_id, stop_id)
+    if key in guide_service.active:
+        raise HTTPException(409, '这个地点正在查询，请等待完成')
+    guide_service.active.add(key)
+    task = asyncio.create_task(guide_service.generate(plan, stop, visit_date))
+    try:
+        while not task.done():
+            await asyncio.wait({task}, timeout=.25)
+            if await request.is_disconnected():
+                raise HTTPException(499, '出行参考查询已取消')
+        result = await task
+        if await request.is_disconnected():
+            raise HTTPException(499, '出行参考查询已取消')
+        guide_store.save(result)
+        return result
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        guide_service.active.discard(key)
+
+
+@app.get('/api/study/catalog')
+async def study_catalog():
+    return knowledge.catalog()
+
+
+@app.post('/api/study/ask')
+async def study_ask(body: StudyQuestion, request: Request):
+    plan = await get_plan(body.plan_id) if body.plan_id else None
+    if body.place_id and body.place_id not in plan_places(plan):
+        raise HTTPException(422, '请提供包含这个地点的行程版本')
+    if body.conversation_id:
+        return await conversation_qa(body, request, plan)
+    if not knowledge.ready:
+        raise HTTPException(503, knowledge.message)
+    task = asyncio.create_task(answer_study(body, knowledge, plan))
+    try:
+        async with asyncio.timeout(90):
+            while not task.done():
+                await asyncio.wait({task}, timeout=.25)
+                if await request.is_disconnected():
+                    raise HTTPException(499, '资料问答已取消')
+            return await task
+    except TimeoutError:
+        raise HTTPException(504, '资料问答超时，请稍后重试') from None
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(503, settings.safe_error(error)) from None
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+@app.post('/api/study/photo-ask')
+async def study_photo_ask(request: Request):
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > 4_100_000:
+            raise HTTPException(413, '照片过大，请选择3MB以内的PNG或JPG图片')
+        chunks.append(chunk)
+    try:
+        body = PhotoQuestion.model_validate_json(b''.join(chunks))
+        data = base64.b64decode(body.image_base64, validate=True)
+        if not data or len(data) > 3_000_000:
+            raise ValueError('size')
+        image_type(data)
+    except (ValueError, binascii.Error):
+        raise HTTPException(422, '请提供有效的问题和3MB以内的PNG或JPG照片') from None
+    plan = await get_plan(body.plan_id) if body.plan_id else None
+    places = plan_places(plan)
+    if body.place_id and body.place_id not in places:
+        raise HTTPException(422, '请提供包含这个地点的行程版本')
+    stop = places[body.place_id].name if body.place_id else body.stop_name.strip()
+    if body.conversation_id:
+        return await conversation_qa(body, request, plan, data)
+    task = asyncio.create_task(answer_photo(data, stop, body.question, knowledge))
+    try:
+        async with asyncio.timeout(120):
+            while not task.done():
+                await asyncio.wait({task}, timeout=.25)
+                if await request.is_disconnected():
+                    raise HTTPException(499, '照片讲解已取消')
+            return await task
+    except TimeoutError:
+        raise HTTPException(504, '照片讲解超时，请稍后重试') from None
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(503, settings.safe_error(error)) from None
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+@app.post('/api/study/conversations')
+async def create_conversation(body: ConversationCreate):
+    if body.plan_id:
+        plan = await get_plan(body.plan_id)
+        if not plan.request.study:
+            raise HTTPException(422, '请选择一份历史研学行程')
+    return conversations.create(body.plan_id)
+
+
+@app.get('/api/study/conversations/{conversation_id}')
+async def get_conversation(conversation_id: str):
+    return conversations.get(conversation_id)
+
+
+@app.delete('/api/study/conversations/{conversation_id}', status_code=204)
+async def delete_conversation(conversation_id: str):
+    conversations.delete(conversation_id)
+    return Response(status_code=204)
+
+
+async def conversation_qa(body: StudyQuestion, request: Request, plan, data: bytes | None = None):
+    session, fingerprint, completed = conversations.prepare(body)
+    if completed is not None:
+        return completed
+    task = None
+    started = time.monotonic()
+    try:
+        memory = context_for(session['turns'], body.use_photo_context)
+        photo_path = data is not None or bool(memory.get('photo_observation'))
+        kind = 'photo' if data is not None else 'photo_followup' if photo_path else 'text'
+        selected = plan_places(plan).get(body.place_id)
+        place = selected.name if selected else body.stop_name.strip() if isinstance(body, PhotoQuestion) else ''
+        state, usage = {}, UsageCollector()
+        if photo_path:
+            task = asyncio.create_task(answer_photo(data, place or memory.get('photo_place', ''), body.question,
+                knowledge, memory=memory, state=state,
+                cached_sources=conversations.web_cache(body.conversation_id) if data is None else None))
+        else:
+            if not knowledge.ready:
+                raise HTTPException(503, knowledge.message)
+            task = asyncio.create_task(answer_study(body, knowledge, plan, memory=memory, usage=usage))
+        async with asyncio.timeout(120 if photo_path else 90):
+            while not task.done():
+                await asyncio.wait({task}, timeout=.25)
+                if await request.is_disconnected():
+                    raise HTTPException(499, '本次问答已取消')
+            answer = await task
+            if await request.is_disconnected():
+                raise HTTPException(499, '本次问答已取消')
+        result = answer if isinstance(answer, dict) else answer.model_dump(mode='json')
+        accounting = result.get('usage', usage.result())
+        if accounting.get('usage_missing_calls'):
+            accounting = {**accounting, 'reported_total_tokens': accounting.get('reported_total_tokens', accounting.get('total_tokens')),
+                          'total_tokens': None}
+        result['usage'] = {'search_calls': 0, 'fetch_calls': 0, 'web_cache_hits': 0, 'vision_calls': 0,
+            **accounting, 'history_turns': len(memory.get('recent_turns', [])),
+            'memory_chars': len(encoded(memory)) if memory else 0, 'seconds': round(time.monotonic() - started, 2)}
+        photo_place = place if data is not None else memory.get('photo_place', '')
+        saved = conversations.commit(body, fingerprint, kind, place, result,
+            turn_memory(result, memory, photo_path, state.get('observation'), photo_place))
+        if photo_path:
+            conversations.cache_web(body.conversation_id, state.get('sources', []))
+        return saved
+    except TimeoutError:
+        raise HTTPException(504, '问答超时，请稍后重试') from None
+    except (HTTPException, ConversationError):
+        raise
+    except Exception as error:
+        raise HTTPException(503, settings.safe_error(error)) from None
+    finally:
+        try:
+            if task is not None:
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        finally:
+            conversations.release(body.conversation_id)
+
+
+def stream_plan(request: Request, trip: TripRequest, previous=None, instruction='', refresh=False, day_index=None, study_patch=None):
     if len(trip.city_route) > 5:
         raise HTTPException(422, '新规划最多 5 个目的地；旧的六城方案可查看，请调整城市后重新生成。')
     async def events():
         queue = asyncio.Queue(maxsize=256)
-        progress = {'phase': ''}
 
         async def emit(kind, data):
-            if kind == 'status' and data.get('phase'):
-                progress['phase'] = data['phase']
             await queue.put((kind, data))
 
         async def work():
@@ -157,77 +392,79 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                     pass
                 return
             _active_tasks += 1
-            started = phase_started = monotonic()
-            phase_times = {}
-            def mark_phase(name):
-                nonlocal phase_started
-                now = monotonic()
-                phase_times[name] = round(now - phase_started, 2)
-                phase_started = now
+            started = monotonic()
             amap = Amap(trip.city_route, emit)
             rail = Railway(trip, emit)
             stage = 'refresh' if refresh else 'agent'
-            limits = task_limits(trip, refresh)
             try:
-                await emit('status', {'message': f'本次{trip.days}天、{len(trip.city_route)}个城市，处理上限约{(limits["total"] + 59) // 60}分钟；可随时取消'})
-                async with asyncio.timeout(limits['total']):
-                    async with asyncio.timeout(limits['model']):
-                        itinerary = previous.itinerary.model_copy(deep=True) if refresh else await generate_itinerary(trip, amap, emit, previous, instruction, rail=rail)
-                    mark_phase('model_and_research')
-                    if previous and day_index is not None:
-                        for index in range(len(itinerary.days)):
-                            if index != day_index:
-                                itinerary.days[index] = previous.itinerary.days[index].model_copy(deep=True)
-                        itinerary.transfers = [t.model_copy(deep=True) for t in previous.itinerary.transfers]
-                    if not refresh and day_index is None:
-                        stage = 'rail_enrichment'
-                        async with asyncio.timeout(limits['rail']):
+                async with asyncio.timeout(180):
+                    effective_trip, study_context = trip, None
+                    if trip.study and previous:
+                        effective_trip = await update_study_request(trip, instruction, study_patch, knowledge, previous)
+                    if refresh:
+                        weather, weather_by_city = previous.weather, previous.weather_by_city
+                    else:
+                        await emit('status', {'message': '正在查询出行城市的天气'})
+                        weather, weather_by_city = await forecast_trip(effective_trip, amap, weather_service)
+                        values = weather_by_city or {effective_trip.destination: weather}
+                        for city, value in values.items():
+                            await emit('tool', {'name': 'get_weather', 'arguments': {'city': city, 'start_date': str(trip.start_date), 'days': trip.days}, 'summary': value.message})
+                    if trip.study:
+                        itinerary, routes, study_context, report = await generate_study_plan(
+                            effective_trip, knowledge, amap, emit, validator, previous, instruction, weather=weather)
+                        adjustments, baseline, same_activities = [], {}, False
+                    else:
+                        itinerary = previous.itinerary.model_copy(deep=True) if refresh else await generate_itinerary(trip, amap, emit, previous, instruction, rail=rail, weather=weather, weather_by_city=weather_by_city)
+                        if previous and day_index is not None:
+                            for index in range(len(itinerary.days)):
+                                if index != day_index:
+                                    itinerary.days[index] = previous.itinerary.days[index].model_copy(deep=True)
+                            itinerary.transfers = [t.model_copy(deep=True) for t in previous.itinerary.transfers]
+                        if not refresh and day_index is None:
                             await rail.enrich(itinerary)
-                    mark_phase('rail_enrichment')
-                    itinerary.guide_insights = [i for i in itinerary.guide_insights if i.source_index < len(trip.guides)]
-                    prepare_accommodation(itinerary, trip, day_index)
-                    stage = 'map_enrichment'
-                    async with asyncio.timeout(limits['map']):
+                        itinerary.guide_insights = [i for i in itinerary.guide_insights if i.source_index < len(trip.guides)]
+                        prepare_accommodation(itinerary, trip, day_index)
+                        stage = 'map_enrichment'
                         routes = await amap.enrich(itinerary, trip.mode, compare_modes=trip.compare_modes,
                                                    day_indices={day_index} if day_index is not None else None,
                                                    optimize_meals=True, protected_text=f'{trip.preferences} {instruction} ' + (' '.join(g.text for g in trip.guides) if trip.guide_mode == 'prefer' else ''), enrich_details=True)
-                    mark_phase('map_enrichment')
-                    if previous and day_index is not None:
-                        routes.extend(r.model_copy(deep=True) for r in previous.routes if r.day_index != day_index)
-                        routes.sort(key=lambda r: r.day_index)
-                    if refresh:
-                        for route in routes:
-                            old = next((r for r in previous.routes if r.day_index == route.day_index
-                                        and r.from_id == route.from_id and r.to_id == route.to_id), None)
-                            option = next((o for o in route.alternatives if old and old.user_selected and o.mode == old.mode and o.available), None)
-                            if option:
-                                for key, value in option.model_dump().items():
-                                    setattr(route, key, value)
-                                route.user_selected = True
-                                route.selection_reason = '保留你手动选择的交通方式；本次已重新查询路线。'
-                    recost_all(trip, itinerary, routes, day_index)
-                    bind_stop_expenses(itinerary, day_index)
-                    cost_adjustments = reconcile_expenses(trip, itinerary, day_index)
-                    audit_guides(trip, itinerary)
-                    baseline = {s.id: (s.start, s.end) for d in itinerary.days for s in d.stops}
-                    same_activities = refresh and same_activity_structure(previous.itinerary, itinerary)
-                    if same_activities and previous.schedule_baseline:
-                        baseline = previous.schedule_baseline.copy()
-                        for day in itinerary.days:
-                            for stop in day.stops:
-                                if stop.id in baseline:
-                                    stop.start, stop.end = baseline[stop.id]
-                    adjustments = cost_adjustments + repair_schedule(itinerary, routes, trip.start_time, only_day=day_index)
-                    adjustments += align_meals(trip, itinerary, routes, day_index, f'{trip.preferences} {instruction}')
-                    await emit('status', {'message': '正在校验时间、真实通行时长和全员预算'})
-                    stage = 'validation'
-                    mark_phase('costs_and_schedule')
-                    report = await validator.validate(trip, itinerary, routes)
-                    mark_phase('validation')
+                        if previous and day_index is not None:
+                            routes.extend(r.model_copy(deep=True) for r in previous.routes if r.day_index != day_index)
+                            routes.sort(key=lambda r: r.day_index)
+                        if refresh:
+                            for route in routes:
+                                old = next((r for r in previous.routes if r.day_index == route.day_index
+                                            and r.from_id == route.from_id and r.to_id == route.to_id), None)
+                                option = next((o for o in route.alternatives if old and old.user_selected and o.mode == old.mode and o.available), None)
+                                if option:
+                                    for key, value in option.model_dump().items():
+                                        setattr(route, key, value)
+                                    route.user_selected = True
+                                    route.selection_reason = '保留你手动选择的交通方式；本次已重新查询路线。'
+                        recost_all(trip, itinerary, routes, day_index)
+                        cost_adjustments = normalize_ticket_quantities(trip, itinerary, day_index) if not refresh else []
+                        bind_stop_expenses(itinerary, day_index)
+                        audit_guides(trip, itinerary)
+                        baseline = {s.id: (s.start, s.end) for d in itinerary.days for s in d.stops}
+                        same_activities = refresh and [
+                            (d.date, [(s.id, s.name, s.kind, s.city, s.poi_id) for s in d.stops]) for d in itinerary.days
+                        ] == [(d.date, [(s.id, s.name, s.kind, s.city, s.poi_id) for s in d.stops]) for d in previous.itinerary.days]
+                        if same_activities and previous.schedule_baseline:
+                            baseline = previous.schedule_baseline.copy()
+                            for day in itinerary.days:
+                                for stop in day.stops:
+                                    if stop.id in baseline:
+                                        stop.start, stop.end = baseline[stop.id]
+                        adjustments = cost_adjustments + repair_schedule(itinerary, routes, trip.start_time, only_day=day_index)
+                        adjustments += align_meals(trip, itinerary, routes, day_index, f'{trip.preferences} {instruction}')
+                        await emit('status', {'message': '正在校验时间、真实通行时长和全员预算'})
+                        stage = 'validation'
+                        report = await validator.validate(trip, itinerary, routes)
                     plan = PlanRecord(id=str(uuid4()), parent_id=previous.id if previous else None,
                         revision=previous.revision + 1 if previous else 1, created_at=datetime.now(timezone.utc),
-                        request=trip, itinerary=itinerary, routes=routes, validation=report, revision_instruction=instruction,
-                        adjustments=adjustments, schedule_baseline=baseline)
+                        request=effective_trip, itinerary=itinerary, routes=routes, validation=report, revision_instruction=instruction,
+                        adjustments=adjustments, schedule_baseline=baseline, study_context=study_context,
+                        weather=weather, weather_by_city=weather_by_city)
                     stage = 'storage'
                     if same_activities:
                         plan.id, plan.parent_id = previous.id, previous.parent_id
@@ -241,29 +478,22 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                     await emit('result', plan.model_dump(mode='json'))
             except asyncio.TimeoutError:
                 _metrics['failed'] += 1
-                elapsed = round(monotonic() - started, 2)
-                phase_times[f'{stage}_incomplete'] = round(monotonic() - phase_started, 2)
-                _last_failure = {'stage': stage, 'type': 'TimeoutError', 'elapsed_s': elapsed,
-                    'model_phase': progress['phase'] if stage == 'agent' else '', 'limits_s': limits}
-                label = {'agent': '模型生成', 'rail_enrichment': '铁路查询', 'map_enrichment': '地图核实'}.get(stage, '行程处理')
-                await emit('error', {'message': f'{label}达到本次处理时限（累计{int(elapsed)}秒），已停止。未保存不完整行程，已有方案保留；可稍后重试。'})
+                _last_failure = {'stage': stage, 'type': 'TimeoutError', 'elapsed_s': round(monotonic() - started, 2)}
+                await emit('error', {'message': '本次规划超过 3 分钟，请减少天数后重试。旧方案仍然保留。'})
             except asyncio.CancelledError:
                 _metrics['cancelled'] += 1
                 raise
             except Exception as error:
                 _metrics['failed'] += 1
-                phase_times[f'{stage}_incomplete'] = round(monotonic() - phase_started, 2)
                 _last_failure = {'stage': stage, 'type': type(error).__name__,
                     'provider_code': getattr(error, 'provider_code', ''), 'path': getattr(error, 'path', ''),
-                    'category': getattr(error, 'code', ''), 'model_phase': getattr(error, 'phase', '') or progress['phase'],
-                    'validation_issues': getattr(error, 'validation_issues', []), 'elapsed_s': round(monotonic() - started, 2)}
+                    'category': getattr(error, 'code', ''), 'elapsed_s': round(monotonic() - started, 2)}
                 logging.getLogger(__name__).warning('planning_failed type=%s category=%s provider_code=%s path=%s',
                     type(error).__name__, getattr(error, 'code', ''), getattr(error, 'provider_code', ''), getattr(error, 'path', ''))
                 await emit('error', {'message': settings.safe_error(error)})
             finally:
                 _active_tasks -= 1
                 _metrics['last_duration_s'] = round(monotonic() - started, 2)
-                _metrics['last_phase_seconds'] = phase_times
                 await asyncio.gather(rail.close(), amap.close(), return_exceptions=True)
                 try:
                     queue.put_nowait(('done', {}))
@@ -296,6 +526,8 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
 
 @app.post('/api/plans/generate')
 async def generate(trip: TripRequest, request: Request):
+    if trip.study and not knowledge.ready:
+        raise HTTPException(503, knowledge.message)
     if trip.start_date < datetime.now(timezone(timedelta(hours=8))).date():
         raise HTTPException(422, '新行程不能从过去日期开始，请更新出行日期')
     return stream_plan(request, trip)
@@ -305,6 +537,15 @@ async def generate(trip: TripRequest, request: Request):
 async def revise(plan_id: str, body: RevisionRequest, request: Request):
     previous = await get_plan(plan_id)
     trip = body.trip or previous.request
+    if bool(trip.study) != bool(previous.request.study):
+        raise HTTPException(422, '切换普通旅行与研学请重新生成')
+    if body.study_patch and not previous.request.study:
+        raise HTTPException(422, '普通旅行不接受研学设置，请从研学入口重新规划')
+    if trip.study:
+        if not knowledge.ready:
+            raise HTTPException(503, knowledge.message)
+        if body.day_index is not None:
+            raise HTTPException(422, '研学为单日行程，请使用整体调整')
     if trip.start_date < datetime.now(timezone(timedelta(hours=8))).date():
         raise HTTPException(422, '修改历史行程时请先将出行日期更新为今天或未来日期')
     if trip.destination != previous.request.destination:
@@ -312,15 +553,14 @@ async def revise(plan_id: str, body: RevisionRequest, request: Request):
     if body.day_index is not None and (trip.days != previous.request.days or trip.start_date != previous.request.start_date
                                        or body.day_index >= trip.days):
         raise HTTPException(422, '局部修改需保持日期与天数不变，且指定日期必须存在')
-    instruction = body.instruction
-    if previous.validation.total_cents > int(trip.budget * 100):
-        instruction += '\n费用约束：' + budget_instruction(previous, trip.budget)
-    return stream_plan(request, trip, previous, instruction, day_index=body.day_index)
+    return stream_plan(request, trip, previous, body.instruction, day_index=body.day_index, study_patch=body.study_patch)
 
 
 @app.post('/api/plans/{plan_id}/refresh')
 async def refresh_plan(plan_id: str, request: Request):
     previous = await get_plan(plan_id)
+    if previous.request.study:
+        raise HTTPException(422, '研学请通过修改重新核对原文和路线，不能直接刷新地点')
     trip = previous.request.model_copy(update={'mode': 'auto', 'compare_modes': True})
     return stream_plan(request, trip, previous, '刷新地点与路线，不调用模型', refresh=True)
 
@@ -330,6 +570,8 @@ async def select_route(plan_id: str, body: RouteSelection):
     previous = await get_plan(plan_id)
     if body.expected_routing_revision is not None and body.expected_routing_revision != previous.routing_revision:
         raise HTTPException(409, '行程已更新，请重新打开后选择交通方式')
+    if previous.request.study:
+        raise HTTPException(422, '研学请使用步行或驾车重新调整，以核对结束时间与步行上限')
     plan = previous.model_copy(deep=True)
     route = next((r for r in plan.routes if r.day_index == body.day_index and r.from_id == body.from_id and r.to_id == body.to_id), None)
     if route is None:
@@ -346,13 +588,11 @@ async def select_route(plan_id: str, body: RouteSelection):
     for stop in plan.itinerary.days[body.day_index].stops:
         if stop.id in plan.schedule_baseline:
             stop.start, stop.end = plan.schedule_baseline[stop.id]
-    bind_stop_expenses(plan.itinerary, body.day_index)
-    cost_adjustments = reconcile_expenses(plan.request, plan.itinerary, body.day_index)
     try:
         recost_all(plan.request, plan.itinerary, plan.routes, body.day_index)
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
-    plan.adjustments = cost_adjustments + repair_schedule(plan.itinerary, plan.routes, plan.request.start_time, only_day=body.day_index)
+    plan.adjustments = repair_schedule(plan.itinerary, plan.routes, plan.request.start_time, only_day=body.day_index)
     plan.adjustments += align_meals(plan.request, plan.itinerary, plan.routes, body.day_index, plan.request.preferences)
     plan.validation = await validator.validate(plan.request, plan.itinerary, plan.routes)
     plan.routing_revision = previous.routing_revision + 1
@@ -362,25 +602,6 @@ async def select_route(plan_id: str, body: RouteSelection):
         store.update_routes(plan, previous.routing_revision)
     except ValueError as error:
         raise HTTPException(409, str(error)) from None
-    return plan
-
-
-@app.post('/api/plans/{plan_id}/costs/reconcile')
-async def reconcile_costs(plan_id: str):
-    previous = await get_plan(plan_id)
-    plan = previous.model_copy(deep=True)
-    bind_stop_expenses(plan.itinerary)
-    changes = reconcile_expenses(plan.request, plan.itinerary)
-    recost_all(plan.request, plan.itinerary, plan.routes)
-    plan.adjustments = list(dict.fromkeys([*plan.adjustments, *changes]))
-    plan.validation = await validator.validate(plan.request, plan.itinerary, plan.routes)
-    plan = PlanRecord.model_validate(plan.model_dump())
-    if plan.model_dump(exclude={'routing_revision'}) != previous.model_dump(exclude={'routing_revision'}):
-        plan.routing_revision = previous.routing_revision + 1
-        try:
-            store.update_routes(plan, previous.routing_revision)
-        except ValueError as error:
-            raise HTTPException(409, str(error)) from None
     return plan
 
 

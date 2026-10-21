@@ -31,7 +31,7 @@ def split_cities(value: str) -> list[str]:
 
 
 
-class GuideSource(StrictModel):
+class PlanningGuideSource(StrictModel):
     title: str = Field(min_length=1, max_length=120)
     url: str = Field(default='', max_length=1000)
     text: str = Field(min_length=1, max_length=6000)
@@ -53,6 +53,90 @@ class GuideSource(StrictModel):
         return value
 
 
+class StudyOptions(StrictModel):
+    topic: str = Field(default='1920年前后的上海：青年与新思想', min_length=1, max_length=500)
+    end_time: str = '13:00'
+    max_stops: int = Field(default=3, ge=1, le=3)
+    max_walking_m: int = Field(default=3000, ge=500, le=10000)
+    required_place_ids: list[str] = Field(default_factory=list, max_length=3)
+
+    @field_validator('end_time')
+    @classmethod
+    def valid_end_time(cls, value):
+        datetime.strptime(value, '%H:%M')
+        if len(value) != 5:
+            raise ValueError('结束时间应为 HH:MM')
+        return value
+
+    @field_validator('topic')
+    @classmethod
+    def topic_not_blank(cls, value):
+        if not value.strip():
+            raise ValueError('请输入研学主题')
+        return value.strip()
+
+
+class StudyPatch(StrictModel):
+    topic: str | None = Field(default=None, min_length=1, max_length=500)
+    end_time: str | None = None
+    max_stops: int | None = Field(default=None, ge=1, le=3)
+    max_walking_m: int | None = Field(default=None, ge=500, le=10000)
+    required_place_ids: list[str] | None = Field(default=None, max_length=3)
+
+
+class StudySource(StrictModel):
+    id: str
+    title: str
+    url: str
+    publisher: str = ''
+    publication_date: str = ''
+    retrieved_at: str = ''
+    original_source_mentions: list[str] = Field(default_factory=list)
+    text_sha256: str = ''
+
+
+class StudyFact(StrictModel):
+    id: str
+    title: str
+    text: str
+    source_ids: list[str]
+    role: str = 'history'
+    start_char: int | None = None
+    end_char: int | None = None
+
+
+class StudyVisitPolicy(StrictModel):
+    status: Literal['documented_open', 'documented_closed', 'unknown', 'not_visitable'] = 'unknown'
+    note: str = ''
+    windows: list[tuple[str, str]] = Field(default_factory=list)
+    last_entry: str | None = None
+    source_ids: list[str] = Field(default_factory=list)
+    free_admission: bool | None = None
+
+
+class StudyPlace(StrictModel):
+    id: str
+    name: str
+    address: str = ''
+
+
+class StudyContext(StrictModel):
+    corpus_version: str
+    facts: list[StudyFact] = Field(default_factory=list)
+    sources: list[StudySource] = Field(default_factory=list)
+    policies: dict[str, StudyVisitPolicy] = Field(default_factory=dict)
+    retrieval_mode: Literal['legacy_structured', 'raw_text'] = 'legacy_structured'
+    places: dict[str, StudyPlace] = Field(default_factory=dict)
+
+
+class StudyStop(StrictModel):
+    place_id: str = Field(min_length=1, max_length=80)
+    why_selected: str = Field(default='', max_length=800)
+    guide: str = Field(default='', max_length=1500)
+    observation_task: str = Field(default='', max_length=600)
+    fact_ids: list[str] = Field(min_length=1, max_length=8)
+
+
 class TripRequest(StrictModel):
     origin: str = Field(default='', max_length=80)
     destination: str = Field(default='', max_length=240)
@@ -68,10 +152,11 @@ class TripRequest(StrictModel):
     include_origin_transport: bool = False
     return_to_origin: bool = False
     preferences: str = Field(default='', max_length=2000)
-    guides: list[GuideSource] = Field(default_factory=list, max_length=3)
+    guides: list[PlanningGuideSource] = Field(default_factory=list, max_length=3)
     compare_modes: bool = True
     confirmed_hotel: str = Field(default='', max_length=120)
     guide_mode: Literal['prefer', 'inspiration'] = 'prefer'
+    study: StudyOptions | None = None
 
     @field_validator('start_time')
     @classmethod
@@ -117,6 +202,17 @@ class TripRequest(StrictModel):
             self.include_origin_transport = True
         if self.include_origin_transport and not self.origin:
             raise ValueError('安排出发交通需要填写出发城市')
+        if self.study:
+            if 'mode' not in self.model_fields_set:
+                self.mode = 'walking'
+            if self.city_route not in (['上海'], ['上海市']) or self.days != 1:
+                raise ValueError('当前研学资料支持上海单日研学；其他城市请使用普通旅行')
+            if self.mode not in ('walking', 'driving') or self.include_origin_transport or self.return_to_origin:
+                raise ValueError('研学支持步行或驾车，不安排跨城交通')
+            if self.study.end_time <= self.start_time:
+                raise ValueError('研学结束时间必须晚于首站开始时间，且不跨午夜')
+            if len(set(self.study.required_place_ids)) > self.study.max_stops:
+                raise ValueError('必去地点超过本次可安排的地点数量')
         return self
 
     @property
@@ -164,6 +260,7 @@ class Stop(StrictModel):
     food_reference: str = Field(default='', max_length=500)
     meal_period: Literal['', 'breakfast', 'lunch', 'dinner'] = ''
     location_note: str = ''
+    study: StudyStop | None = None
     place_name: str = Field(default='', max_length=120)
     location_behavior: Literal['poi', 'area', 'same_as_previous', 'unlocated'] = 'poi'
 
@@ -186,8 +283,10 @@ class Expense(StrictModel):
     label: str = Field(min_length=1, max_length=160)
     category: Literal['ticket', 'food', 'hotel', 'transport', 'other']
     unit_cost: Decimal = Field(ge=0, le=10000000)
-    quantity: int = Field(default=1, ge=1, le=1000)
-    basis: Literal['person', 'group'] = 'group'
+    quantity: int = Field(default=1, ge=1, le=1000,
+        description='独立消费单位数，不包含同行人数。单次参观的每人门票填1；夜数或餐数可大于1。')
+    basis: Literal['person', 'group'] = Field(default='group',
+        description='person会由程序再乘同行人数，quantity不得重复填写人数；group不再乘人数。')
     estimated: Literal[True] = True
     stop_id: str = ''
     note: str = Field(default='模型估算，未查询实时价格', max_length=500)
@@ -339,17 +438,36 @@ class ValidationReport(StrictModel):
     diagnostic: str = ''
 
 
-class CostLine(StrictModel):
-    label: str
-    category: str
-    unit_cost: Decimal
-    quantity: int
-    basis: Literal['person', 'group']
-    people_multiplier: int
-    subtotal_cents: int
-    day_index: int | None = None
-    stop_id: str = ''
-    note: str = ''
+class WeatherDay(StrictModel):
+    date: date
+    status: Literal['available', 'not_covered', 'unavailable'] = 'not_covered'
+    day_weather: str = ''
+    night_weather: str = ''
+    day_temp: float | None = None
+    night_temp: float | None = None
+    temp_max: float | None = None
+    temp_min: float | None = None
+    day_wind: str = ''
+    night_wind: str = ''
+    day_power: str = ''
+    night_power: str = ''
+
+
+class WeatherSnapshot(StrictModel):
+    provider: Literal['amap', 'qweather'] = 'amap'
+    source_url: str = 'https://lbs.amap.com/api/webservice/guide/api/weatherinfo'
+    requested_city: str
+    city: str = ''
+    adcode: str = ''
+    status: Literal['available', 'partial', 'not_covered', 'unavailable'] = 'unavailable'
+    message: str = ''
+    failure_code: str = ''
+    failure_reason: str = ''
+    retryable: bool | None = None
+    issued_at: datetime | None = None
+    fetched_at: datetime
+    from_cache: bool = False
+    days: list[WeatherDay] = Field(default_factory=list, max_length=10)
 
 
 class PlanRecord(StrictModel):
@@ -363,24 +481,19 @@ class PlanRecord(StrictModel):
     validation: ValidationReport
     revision_instruction: str = ''
     expense_totals: dict[str, int] = Field(default_factory=dict)
-    cost_breakdown: list[CostLine] = Field(default_factory=list)
     adjustments: list[str] = Field(default_factory=list)
+    study_context: StudyContext | None = None
+    weather: WeatherSnapshot | None = None
+    weather_by_city: dict[str, WeatherSnapshot] = Field(default_factory=dict)
     routing_revision: int = 0
     schedule_baseline: dict[str, tuple[str, str]] = Field(default_factory=dict)
 
     @model_validator(mode='after')
     def authoritative_cost_categories(self):
         totals = {}
-        self.cost_breakdown = []
-        daily = [(index, e) for index, day in enumerate(self.itinerary.days) for e in day.expenses]
-        transfers = list(itinerary_expenses(self.itinerary))[len(daily):]
-        for day_index, expense in [*daily, *((None, e) for e in transfers)]:
+        for expense in itinerary_expenses(self.itinerary):
             amount = cents(expense.unit_cost) * expense.quantity * (self.request.people if expense.basis == 'person' else 1)
             totals[expense.category] = totals.get(expense.category, 0) + amount
-            self.cost_breakdown.append(CostLine(label=expense.label, category=expense.category,
-                unit_cost=Decimal(cents(expense.unit_cost)) / 100, quantity=expense.quantity, basis=expense.basis,
-                people_multiplier=self.request.people if expense.basis == 'person' else 1,
-                subtotal_cents=amount, day_index=day_index, stop_id=expense.stop_id, note=expense.note))
         self.expense_totals = totals
         return self
 
@@ -389,6 +502,7 @@ class RevisionRequest(StrictModel):
     instruction: str = Field(min_length=1, max_length=2000)
     day_index: int | None = Field(default=None, ge=0, le=9)
     trip: TripRequest | None = None
+    study_patch: StudyPatch | None = None
 
     @field_validator('instruction')
     @classmethod
@@ -404,6 +518,94 @@ class RouteSelection(StrictModel):
     to_id: str
     mode: Mode
     expected_routing_revision: int | None = Field(default=None, ge=0)
+
+
+class StudyQuestion(StrictModel):
+    question: str = Field(min_length=1, max_length=1000)
+    plan_id: str | None = None
+    place_id: str | None = None
+    conversation_id: str | None = Field(default=None, min_length=16, max_length=64)
+    request_id: str | None = Field(default=None, min_length=8, max_length=80)
+    expected_revision: int | None = Field(default=None, ge=0)
+    use_photo_context: bool = True
+
+    @model_validator(mode='after')
+    def conversation_fields(self):
+        fields = (self.conversation_id, self.request_id, self.expected_revision)
+        if any(v is not None for v in fields) and not all(v is not None for v in fields):
+            raise ValueError('会话编号、请求编号与版本必须一起提供')
+        return self
+
+    @field_validator('question')
+    @classmethod
+    def nonblank(cls, value):
+        if not value.strip():
+            raise ValueError('请输入想了解的问题')
+        return value.strip()
+
+
+class PhotoQuestion(StudyQuestion):
+    image_base64: str = Field(min_length=1, max_length=4_000_000)
+    stop_name: str = Field(default='', max_length=120)
+
+
+class ConversationCreate(StrictModel):
+    plan_id: str | None = None
+
+
+class GuideQuery(StrictModel):
+    refresh: bool = False
+
+
+class GuideSource(StrictModel):
+    id: str
+    title: str
+    url: str
+    kind: Literal['official', 'public', 'guide']
+    publication_date: str = ''
+    retrieved_at: datetime
+
+
+class GuideEntry(StrictModel):
+    text: str = Field(min_length=1, max_length=80)
+    source_id: str
+    evidence: str = Field(min_length=8, max_length=120)
+
+
+class GuideItem(GuideEntry):
+    category: Literal['overview', 'opening', 'visit', 'tips']
+
+
+class GuideDraft(StrictModel):
+    overview: list[GuideEntry] = Field(max_length=2)
+    opening: list[GuideEntry] = Field(max_length=2)
+    visit: list[GuideEntry] = Field(max_length=1)
+    tips: list[GuideEntry] = Field(max_length=1)
+
+
+class PlaceGuide(StrictModel):
+    plan_id: str
+    stop_id: str
+    place_name: str
+    visit_date: date
+    status: Literal['ready', 'partial', 'unavailable']
+    message: str = ''
+    items: list[GuideItem] = Field(default_factory=list, max_length=6)
+    sources: list[GuideSource] = Field(default_factory=list, max_length=4)
+    queried_at: datetime
+    usage: dict = Field(default_factory=dict)
+
+
+class StudyParagraph(StrictModel):
+    text: str = Field(min_length=1, max_length=1500)
+    fact_ids: list[str] = Field(min_length=1, max_length=8)
+
+
+class StudyAnswer(StrictModel):
+    status: Literal['supported', 'insufficient_evidence']
+    message: str = ''
+    paragraphs: list[StudyParagraph] = Field(default_factory=list, max_length=6)
+    context: StudyContext | None = None
 
 
 def cents(value: Decimal | str | int):

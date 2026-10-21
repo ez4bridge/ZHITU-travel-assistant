@@ -1,7 +1,31 @@
 """Normalize nationwide journeys to integer minutes for both rule engines."""
 from datetime import datetime, time
+import re
 
 from .models import Itinerary, TripRequest, city_key
+
+
+class TransferCoverageError(ValueError):
+    pass
+
+
+def ensure_transfer_coverage(request: TripRequest, itinerary: Itinerary) -> None:
+    cities = request.journey_cities
+    expected = [(city_key(a), city_key(b)) for a, b in zip(cities, cities[1:])]
+    actual = [(city_key(t.from_city), city_key(t.to_city)) for t in itinerary.transfers]
+    if actual != expected:
+        route = ' → '.join(cities)
+        raise TransferCoverageError(f'跨城交通必须按顺序完整列出 {route}；保留已选择的出发与返程，逐段提供日期、时间和费用')
+    for day in itinerary.days:
+        for stop in day.stops:
+            # Boarding belongs to the intercity leg; never force an origin station into the destination city.
+            if stop.kind != 'break' or not re.search(r'候车|候机|安检|取票', stop.name) or not re.search(r'站|机场', stop.name):
+                continue
+            if re.search(r'地铁|公交', stop.name):
+                continue
+            other = next((city for city in cities if city_key(city) != city_key(stop.city) and stop.name.startswith(city_key(city))), None)
+            if other:
+                raise TransferCoverageError(f'{stop.name}不能归入{stop.city}。跨城车站候车、安检信息写到对应transfers.note，不作为目的地城市的游玩活动；纯在途日stops可为空')
 
 
 def normalize_cities(request: TripRequest, itinerary: Itinerary) -> None:

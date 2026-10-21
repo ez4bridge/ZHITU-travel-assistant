@@ -16,29 +16,37 @@ class Settings:
         self.llm_key = os.getenv('LLM_API_KEY', '').strip()
         self.llm_url = os.getenv('LLM_BASE_URL', 'https://api.deepseek.com').strip()
         self.llm_model = os.getenv('LLM_MODEL', 'deepseek-flash').strip()
+        self.guide_search_key = os.getenv('GUIDE_SEARCH_API_KEY', '').strip() or (
+            self.llm_key if urlparse(self.llm_url).hostname == 'api.deepseek.com' else '')
+        self.guide_official_domains = tuple(domain.strip().lower() for domain in
+            os.getenv('GUIDE_OFFICIAL_DOMAINS', '').split(',') if domain.strip())
         self.amap_key = os.getenv('AMAP_API_KEY', '').strip()
         self.amap_web_key = os.getenv('AMAP_WEB_KEY', '').strip()
         self.amap_js_sec = os.getenv('AMAP_JS_SEC', '').strip()
         self.amap_sign_secret = os.getenv('AMAP_SIGN_SECRET', '').strip()
+        self.qweather_key = os.getenv('QWEATHER_API_KEY', '').strip()
+        self.qweather_host = os.getenv('QWEATHER_API_HOST', '').strip().lower()
+        if self.qweather_host and not re.fullmatch(r'[a-z0-9]+(?:[.-][a-z0-9]+)*\.qweatherapi\.com', self.qweather_host):
+            raise ValueError('QWEATHER_API_HOST 请填写控制台专属 qweatherapi.com 域名，不含协议、端口或路径')
         self.amap_qps = float(os.getenv('AMAP_QPS', '2'))
         if not 0 < self.amap_qps <= 100:
             raise ValueError('AMAP_QPS 必须大于 0 且不超过 100')
-        self.validator = os.getenv('VALIDATOR_BACKEND', 'auto')
         self.port = int(os.getenv('PORT', '7862'))
         self.rail_mcp_enabled = os.getenv('RAIL_MCP_ENABLED', 'false').lower() in ('1', 'true', 'yes')
         default_rail_python = ROOT / '.tools' / 'rail-mcp' / '.venv' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
         self.rail_mcp_python = Path(os.getenv('RAIL_MCP_PYTHON', '') or default_rail_python)
         self.runtime = ROOT / '.runtime'
         self.runtime.mkdir(exist_ok=True)
+        corpus = Path(os.getenv('STUDY_CORPUS_DIR', '.runtime/study/shanghai_youth_v1').strip() or '.runtime/study/shanghai_youth_v1')
+        self.study_corpus_dir = corpus if corpus.is_absolute() else ROOT / corpus
+        self.rag_dir = self.runtime / 'rag'
+        self.rag_mode = os.getenv('RAG_RETRIEVAL_MODE', 'auto').strip().lower()
+        if self.rag_mode not in ('auto', 'bm25', 'dense', 'hybrid', 'hybrid_rerank'):
+            raise ValueError('RAG_RETRIEVAL_MODE不在支持的检索模式中')
 
     def safe_error(self, error):
-        if type(error).__module__.startswith('openai') and getattr(error, 'status_code', None) == 403:
-            return '模型服务拒绝访问（HTTP 403）。请检查模型服务访问权限或网络代理；本次尚未完成模型调用，不能归因于地图或铁路。'
-        if type(error).__module__.startswith('openai') and type(error).__name__ == 'APITimeoutError':
-            phase = '资料查询' if getattr(error, 'phase', '') == 'research' else '行程结构生成'
-            return f'模型服务在{phase}阶段超过60秒没有收到数据，连接超时；不是地图限额错误。请稍后重试或减少行程复杂度。'
         message = str(error)
-        for value in (self.llm_key, self.amap_key, self.amap_web_key, self.amap_js_sec, self.amap_sign_secret):
+        for value in (self.llm_key, self.guide_search_key, self.amap_key, self.amap_web_key, self.amap_js_sec, self.amap_sign_secret, self.qweather_key):
             if value:
                 message = message.replace(value, '[hidden]')
         message = re.sub(r'(?i)(sig=)[a-f0-9]{32}', r'\1[hidden]', message)
@@ -47,10 +55,7 @@ class Settings:
     def model_options(self):
         if urlparse(self.llm_url).hostname == 'api.deepseek.com':
             return {'extra_body': {'thinking': {'type': 'disabled'}}}
-        if self.llm_model.lower().split('/')[-1].startswith(('deepseek', 'qwen')):
-            return {'extra_body': {'chat_template_kwargs': {'enable_thinking': False}}}
         return {}
-
 
 
 settings = Settings()
