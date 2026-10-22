@@ -200,4 +200,5 @@ class KnowledgeBase:
         return {'ready': self.ready, 'message': self.message, 'corpus_version': self.version,
             'retrieval_mode': 'raw_text', 'source_count': len(self.sources), 'chunk_count': len(self.chunks),
             'fact_count': len(self.chunks), 'topics': ['1920年前后的上海：青年与新思想'], 'places': [],
+            'documents': [{'id': source.id, 'title': source.title} for source in self.sources.values()],
             'retrieval': self.retriever().diagnostic()}

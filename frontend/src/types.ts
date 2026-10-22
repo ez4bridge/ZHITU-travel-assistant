@@ -30,6 +30,7 @@ export interface StudyStop {
 }
 export interface StudyCatalog {
   ready: boolean; message: string; corpus_version: string; source_count: number; fact_count: number; topics: string[]
+  documents?: { id: string; title: string }[]
   places: { id: string; name: string; candidate_group: string; routable: boolean }[]
   retrieval_mode?: 'raw_text'; chunk_count?: number
   retrieval?: {

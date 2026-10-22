@@ -109,6 +109,7 @@ def build(output, resources, work, node_directory):
     shutil.copy2(SOURCE / 'docs/GETTING_STARTED.md', output / 'docs/GETTING_STARTED.md')
     shutil.copytree(SOURCE / 'docs/images', output / 'docs/images')
     shutil.copytree(resources / 'LICENSES', output / 'licenses/models')
+    shutil.copytree(SOURCE / 'licenses', output / 'licenses', dirs_exist_ok=True)
     shutil.copy2(resources / 'SOURCES.json', output / 'docs/STUDY_SOURCES.json')
 
     main_runtime, rail_runtime = output / 'runtime/python', output / 'runtime/rail'
