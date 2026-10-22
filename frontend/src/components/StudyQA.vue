@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { MessageCircle, Send, LoaderCircle, X, ImagePlus, ClipboardPaste, Plus, Trash2 } from 'lucide-vue-next'
 import { api } from '../api'
 import { pastedPhoto, preparePhoto, readClipboardPhoto } from '../photoInput'
+import { studyQuestions } from '../studySuggestions'
 import type { ChatResult, StudyConversation } from '../types'
 import StudyChatAnswer from './StudyChatAnswer.vue'
 
@@ -152,11 +153,11 @@ async function ask(sample?: string) {
       <article v-for="turn in conversation?.turns" :key="turn.id" class="qa-chat-turn"><div class="qa-user-message"><span v-if="turn.kind === 'photo'" class="qa-photo-badge"><ImagePlus :size="12" />已分析的照片</span><p>{{ turn.question }}</p><small v-if="turn.place_name">{{ turn.place_name }}</small></div><StudyChatAnswer :result="turn.result" /></article>
       <div v-if="pendingQuestion" class="qa-user-message qa-pending"><p>{{ pendingQuestion }}</p><small>正在回答…</small></div>
     </div>
-    <div v-if="!conversation?.turns.length" class="qa-examples"><button type="button" :disabled="busy || !ready || restoring" @click="ask('老渔阳里和新渔阳里有什么区别？')">两个渔阳里有什么区别？</button><button type="button" :disabled="busy || !ready || restoring" @click="ask('陈望道在哪里完成《共产党宣言》的翻译？')">陈望道在哪里翻译？</button></div>
+    <div v-if="!conversation?.turns.length" class="qa-examples"><button v-for="example in studyQuestions" :key="example.question" type="button" :disabled="busy || !ready || restoring" @click="ask(example.question)">{{ example.label }}</button></div>
     <form class="qa-composer" @submit.prevent="ask()" @paste="pastePhoto">
       <div v-if="preparingPhoto" class="qa-photo-preparing" role="status"><LoaderCircle :size="15" class="spin" />正在准备照片…<button type="button" @click="removePhoto">取消</button></div>
       <div v-if="photo" class="qa-photo-preview"><img :src="preview" alt="待讲解的照片" /><div><strong>从照片里，发现历史线索</strong><p>{{ photo.name }}</p><small>清晰的展品或铭牌，讲解更有针对性</small></div><button type="button" class="icon-button" :disabled="busy" aria-label="移除照片" @click="removePhoto"><X :size="17" /></button></div>
-      <label v-if="photo" class="qa-photo-place"><span>拍摄地点</span><span v-if="placeName" class="qa-selected-place">{{ placeName }}</span><input v-else v-model="stopName" maxlength="120" :disabled="busy" placeholder="例如：上海又新印刷所（可选）" /></label>
+      <label v-if="photo" class="qa-photo-place"><span>拍摄地点</span><span v-if="placeName" class="qa-selected-place">{{ placeName }}</span><input v-else v-model="stopName" maxlength="120" :disabled="busy" placeholder="例如：四行仓库（可选）" /></label>
       <div v-if="photoContext && !photo" class="qa-context-chip">接着聊上一张照片<button type="button" :disabled="busy" aria-label="移除照片上下文" @click="photoContext = false"><X :size="12" /></button></div>
       <textarea v-model="question" maxlength="1000" :disabled="busy || restoring" rows="2" :placeholder="photo ? '想了解照片里的什么？也可以直接发送…' : conversation?.turns.length ? '可以接着问：他、这里、刚才那台机器…' : '问问人物、事件、地点之间的联系…'" aria-label="历史资料问题" />
       <div class="qa-composer-actions"><input ref="picker" class="qa-file-input" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" :disabled="busy || restoring || preparingPhoto" aria-label="选择研学照片" @change="choosePhoto" /><button type="button" class="qa-attach" :disabled="busy || restoring || preparingPhoto" @click="picker?.click()"><ImagePlus :size="17" />添加照片</button><button type="button" class="qa-attach" :disabled="busy || restoring || preparingPhoto" @click="pasteFromClipboard"><ClipboardPaste :size="16" />粘贴图片</button><button v-if="busy" type="button" class="qa-stop" @click="cancel(); notice = '已停止等待；刷新对话可核对是否已完成。'">取消</button><button type="submit" class="qa-send" :disabled="!canSend" aria-label="提交资料问题"><LoaderCircle v-if="busy" :size="16" class="spin" /><Send v-else :size="16" /><span>{{ busy ? '正在解读' : '发送' }}</span></button></div>

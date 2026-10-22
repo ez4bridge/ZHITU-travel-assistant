@@ -13,6 +13,7 @@ import { timelineEnter as vTimelineEnter, usePageMotion } from './appearance/use
 import JourneyBackdrop from './appearance/JourneyBackdrop.vue'
 import RouteMap from './components/RouteMap.vue'
 import StudyForm from './components/StudyForm.vue'
+import StudyCorpusNotice from './components/StudyCorpusNotice.vue'
 import StudyQA from './components/StudyQA.vue'
 import ItineraryStop from './components/ItineraryStop.vue'
 import BudgetDetails from './components/BudgetDetails.vue'
@@ -23,6 +24,7 @@ import PlaceGuide from './components/PlaceGuide.vue'
 import { api, stream } from './api'
 import { useDepartureClock, futureDeparture, defaultDepartureDate } from './departure'
 import { journeyCities, transferCoverage, transportRequestChanged, transportScopeText } from './transportScope'
+import { studyThemes } from './studySuggestions'
 import type { TripRequest, Plan, Health, HistoryItem, ToolEvent, ValidationReport, StudyCatalog, DestinationStay, Mode, RouteLeg, WeatherSnapshot } from './types'
 
 const { reduced: reducedMotion, motion: pageMotion, setHero: setMotionHero, introPlaying, toggleMotion } = usePageMotion()
@@ -147,6 +149,13 @@ function switchMode(toStudy: boolean) {
   Object.assign(form, JSON.parse(JSON.stringify(savedForms[next])), { study: savedForms[next].study || null })
   plan.value = savedPlans[next]; error.value = ''; tools.value = []; revision.value = ''; retainedPlanNotice.value = ''
   setDay(0)
+}
+
+async function chooseStudyTheme(question: string) {
+  if (busy.value || !studyMode.value || !form.study) return
+  form.study.topic = question
+  await nextTick()
+  document.getElementById('study-topic')?.focus()
 }
 
 function setDay(index: number) {
@@ -299,9 +308,9 @@ function followGuides() {
         <span class="eyebrow"><Sparkles :size="14" /> YOUR NEXT LITTLE ADVENTURE</span>
         <h1 v-if="studyMode">从一个问题，<br />走进<span>一段历史。</span></h1>
         <h1 v-else>好风景，<br />也要<span>好行程。</span></h1>
-        <p v-if="studyMode">沿着人物、报刊与城市的线索，<br class="desktop-break" />让有出处的故事，成为可以走近的研学旅程。</p>
+        <p v-if="studyMode">沿着人物、书刊与建筑的线索，<br class="desktop-break" />让有出处的故事，成为可以走近的研学旅程。</p>
         <p v-else>把期待告诉我们。让 AI 整理灵感，<br class="desktop-break" />让真实路线，把每一站串成你的旅程。</p>
-        <a href="#planner" class="hero-link">开始我的城市漫游 <ArrowUpRight :size="20" /></a>
+        <a href="#planner" class="hero-link">{{ studyMode ? '开始我的研学探索' : '开始我的城市漫游' }} <ArrowUpRight :size="20" /></a>
         <div class="hero-features"><span><Route :size="15" /> 真实地图路线</span><span><Wallet :size="15" /> 全员预算核对</span><span><SlidersHorizontal :size="15" /> 随心调整行程</span></div>
       </div>
       <CityScene />
@@ -310,14 +319,17 @@ function followGuides() {
     <main id="planner" class="planner">
       <div class="planning-modes" role="tablist" aria-label="规划模式"><button role="tab" :aria-selected="!studyMode" :class="{ active: !studyMode }" @click="switchMode(false)">普通旅行</button><button role="tab" :aria-selected="studyMode" :class="{ active: studyMode }" @click="switchMode(true)">历史研学<span>有据可循</span></button></div>
       <div class="section-heading"><div><span class="eyebrow">MAKE IT YOURS</span><h2>{{ plan ? '你的旅程，有了轮廓。' : '下一站，你想去哪里？' }}</h2></div></div>
+      <StudyCorpusNotice v-if="studyMode" :catalog="catalog" />
       <section v-if="studyMode" class="study-demo-topics card" aria-labelledby="demo-topics-title">
-        <div class="demo-topics-heading"><h3 id="demo-topics-title">当前 Demo 可以探索什么？</h3><span>上海近代史 · 1920年前后</span></div>
-        <p class="demo-topics-intro">沿着现有资料，从人物、书刊与城市旧址出发，选择一个感兴趣的问题。</p>
+        <div class="demo-topics-heading"><h3 id="demo-topics-title">从这些主题开始探索</h3><span>上海 · 单日研学</span></div>
+        <p class="demo-topics-intro">选择主题填入问题，再设置时间、预算与出行方式，生成带出处的研学安排。</p>
         <div class="demo-topics-grid">
-          <article><span class="demo-topic-number">01</span><h4>青年与新思想</h4><p>从《新青年》与渔阳里，了解青年如何阅读、学习并参与组织活动。</p></article>
-          <article><span class="demo-topic-number">02</span><h4>一本书的传播</h4><p>围绕陈望道与《共产党宣言》，追踪翻译、印刷出版与思想传播的联系。</p></article>
-          <article><span class="demo-topic-number">03</span><h4>城市里的红色记忆</h4><p>走近编辑部、印刷所和青年团旧址，将人物故事与今天的参观点连接起来。</p></article>
+          <article v-for="(theme, index) in studyThemes" :key="theme.id" :class="{ selected: form.study?.topic === theme.question }">
+            <span class="demo-topic-number">{{ String(index + 1).padStart(2, '0') }}</span><h4>{{ theme.title }}</h4><p>{{ theme.description }}</p>
+            <button type="button" class="demo-topic-action" :disabled="busy" :aria-pressed="form.study?.topic === theme.question" :data-study-topic="theme.id" @click="chooseStudyTheme(theme.question)">{{ form.study?.topic === theme.question ? '已填入问题' : '用这个主题' }}<ArrowRight :size="14" /></button>
+          </article>
         </div>
+        <p class="demo-topics-help">也可以填写自己的问题，行程会结合时间与距离选择地点。生成后可查看原文、接着提问，并在“出行参考”中按地点查询开放与预约信息。</p>
       </section>
       <div class="planner-grid">
         <aside v-if="!studyMode" class="request-panel card">
@@ -394,11 +406,11 @@ function followGuides() {
           </template>
 
           <div v-else-if="!busy" class="empty-workspace card">
-            <div class="empty-heading"><span class="eyebrow">A JOURNEY WAITING TO HAPPEN</span><span class="outline-tag"><Compass :size="14" /> 专属于你的行程</span></div>
-            <div class="empty-art"><div class="art-ring ring-one"></div><div class="art-ring ring-two"></div><div class="art-compass"><Compass :size="58" stroke-width="1.1" /></div><span class="art-chip chip-one"><Coffee :size="16" /> 一杯本地咖啡</span><span class="art-chip chip-two"><Landmark :size="16" /> 一段城市故事</span><span class="art-chip chip-three"><Leaf :size="16" /> 一点留白的时间</span></div>
+            <div class="empty-heading"><span class="eyebrow">A JOURNEY WAITING TO HAPPEN</span><span class="outline-tag"><Compass :size="14" /> {{ studyMode ? '从原文出发的研学' : '专属于你的行程' }}</span></div>
+            <div class="empty-art"><div class="art-ring ring-one"></div><div class="art-ring ring-two"></div><div class="art-compass"><Compass :size="58" stroke-width="1.1" /></div><span class="art-chip chip-one"><component :is="studyMode ? Landmark : Coffee" :size="16" /> {{ studyMode ? '一段原文线索' : '一杯本地咖啡' }}</span><span class="art-chip chip-two"><Landmark :size="16" /> {{ studyMode ? '一处历史地点' : '一段城市故事' }}</span><span class="art-chip chip-three"><Leaf :size="16" /> {{ studyMode ? '一个现场问题' : '一点留白的时间' }}</span></div>
             <h3>{{ studyMode ? '让一段历史，有迹可循。' : '旅程，从你的期待开始。' }}</h3><p v-if="studyMode">提出一个学习问题，从资料里寻找人物与地点，<br />生成带出处的讲解、现场任务与真实行走路线。</p><p v-else>填写左侧的旅行偏好，我们会为你整理每日行程，<br />计算真实路线，并检查时间与预算是否合适。</p>
-            <div class="empty-steps"><div><span>01</span><strong>说说你的期待</strong><small>目的地、时间与偏好</small></div><ArrowRight :size="16" /><div><span>02</span><strong>看见旅行轮廓</strong><small>每日行程与真实路线</small></div><ArrowRight :size="16" /><div><span>03</span><strong>调整成你的节奏</strong><small>校验问题，一次次完善</small></div></div>
-            <div class="empty-bottom"><CircleCheck :size="14" /> 不需要下载大模型或 PDF 权重，就能开始规划。</div>
+            <div class="empty-steps"><div><span>01</span><strong>{{ studyMode ? '选一个历史问题' : '说说你的期待' }}</strong><small>{{ studyMode ? '主题、时间与预算' : '目的地、时间与偏好' }}</small></div><ArrowRight :size="16" /><div><span>02</span><strong>{{ studyMode ? '把资料连成路线' : '看见旅行轮廓' }}</strong><small>{{ studyMode ? '地点、地图与原文依据' : '每日行程与真实路线' }}</small></div><ArrowRight :size="16" /><div><span>03</span><strong>{{ studyMode ? '边走边问与观察' : '调整成你的节奏' }}</strong><small>{{ studyMode ? '文字、照片与连续追问' : '校验问题，一次次完善' }}</small></div></div>
+            <div class="empty-bottom"><CircleCheck :size="14" /> {{ studyMode ? '选主题只会填入问题，点击生成后才开始规划。' : '不需要下载大模型或 PDF 权重，就能开始规划。' }}</div>
           </div>
           <details v-if="tools.length" class="tool-log card"><summary><Route :size="16" /> 查看本次查询记录 <span>{{ tools.length }} 次工具调用</span></summary><div class="tool-log-body"><article v-for="(tool, i) in tools" :key="i"><strong>{{ tool.name }}</strong><code>{{ JSON.stringify(tool.arguments) }}</code><p>{{ tool.summary }}</p></article></div></details>
           <p v-if="progress && !busy && !error" class="completion-note"><Check :size="14" /> {{ progress }}</p>
@@ -415,4 +427,11 @@ function followGuides() {
 
 <style scoped>
 .budget-excess { color: #a65a32; font-size: 12px; line-height: 1.7; margin-top: 14px; }
+.demo-topics-grid article { display: flex; flex-direction: column; min-width: 0; }
+.demo-topics-grid article.selected { border-color: #9ac4b0; background: #f0f7ee; }
+.demo-topic-action { display: inline-flex; align-items: center; gap: 7px; align-self: flex-start; padding: 8px 0 0; margin-top: auto; color: #147b71; font-size: 12px; }
+.demo-topic-action:disabled { opacity: .5; cursor: not-allowed; }
+.demo-topic-action:focus-visible { outline: 2px solid #147b71; outline-offset: 4px; border-radius: 3px; }
+.demo-topics-help { font-size: 11px; line-height: 1.9; color: #74856a; margin: 16px 0 0; }
+@media (min-width: 651px) and (max-width: 1050px) { .demo-topics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>
