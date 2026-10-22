@@ -92,10 +92,10 @@
       ]
     },
     "expected_status": "issues",
-    "expected_errors": [
+    "expected_errors": [],
+    "expected_warnings": [
       "over_budget"
-    ],
-    "expected_warnings": []
+    ]
   },
   {
     "name": "overlap",

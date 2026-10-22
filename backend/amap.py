@@ -15,6 +15,17 @@ from .administrative import AdministrativeMatchError, cached_division, contains_
 logger = logging.getLogger(__name__)
 
 
+async def gather_queries(coroutines):
+    tasks = [asyncio.create_task(coroutine) for coroutine in coroutines]
+    try:
+        return await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+
+
 class MapServiceError(RuntimeError):
     def __init__(self, code: str, message: str, fatal: bool = False, provider_code: str = '', path: str = ''):
         super().__init__(message)
@@ -65,6 +76,7 @@ class Amap:
         self.city = self.cities[0]
         self.emit = emit
         self.places = {}
+        self._place_locks = {}
         self.routes = {}
         self.fatal_error = None
         self._blocked_paths = {}
@@ -155,6 +167,13 @@ class Amap:
     async def search(self, keywords, city=''):
         city = self.canonical_city(city)
         keywords = str(keywords).strip()[:120]
+        lock = self._place_locks.setdefault((city_key(city), keywords), asyncio.Lock())
+        async with lock:
+            return await self._search(keywords, city)
+
+    async def _search(self, keywords, city=''):
+        city = self.canonical_city(city)
+        keywords = str(keywords).strip()[:120]
         cache_key = (city_key(city), keywords)
         if cache_key in self.places:
             return self.places[cache_key]
@@ -187,6 +206,20 @@ class Amap:
         return found
 
     async def resolve(self, stop):
+        if stop.kind in ('sight', 'break'):
+            for field in ('place_name', 'area_name'):
+                value = getattr(stop, field)
+                match = re.fullmatch(r'(.+(?:路|街|广场))(?:历史文化名街|历史文化街区|历史街区|步行街区|街区)', value)
+                if match:
+                    setattr(stop, field, match.group(1))
+        # A named street/park is a destination, even if a draft marked its leisure
+        # activity as "unlocated" or "same_as_previous". Still verify the actual POI.
+        if stop.kind in ('sight', 'break') and stop.location_behavior in ('unlocated', 'same_as_previous'):
+            named = (stop.place_name or stop.area_name or stop.name).strip()
+            named = re.sub(r'(?:周边)?(?:自由活动|自由漫步|闲逛|散步|漫步|休息)$', '', named).strip()
+            if named and re.search(r'路|街|广场|公园|湖|园|博物馆|纪念馆|旧址|景区|古镇|码头|塔|楼', named):
+                stop.place_name = named
+                stop.location_behavior = 'area' if stop.area_name else 'poi'
         # Discard all coordinates and verification claims supplied by the model.
         stop.location = None
         stop.location_status = 'unknown'
@@ -238,11 +271,11 @@ class Amap:
         if stop.kind == 'meal':
             candidates = [p for p in candidates if not p.get('type') or '餐饮' in p['type']]
         exact = [p for p in candidates if p['name'] == query or p['id'] == stop.poi_id]
-        if stop.kind == 'sight' and len(exact) > 1:
+        if stop.kind in ('sight', 'break') and len(exact) > 1:
             scenic = [p for p in exact if '风景名胜' in p.get('type', '')]
             if len(scenic) == 1:
                 exact = scenic
-        if stop.kind == 'sight' and not exact and len(candidates) > 1:
+        if stop.kind in ('sight', 'break') and not exact and len(candidates) > 1:
             scenic = [p for p in candidates if '风景名胜' in p.get('type', '')]
             auxiliary = [p for p in candidates if any(category in p.get('type', '')
                          for category in ('停车场', '售票处', '信息咨询中心'))]
@@ -252,9 +285,18 @@ class Amap:
         if len(exact) == 1:
             candidates = exact
         elif len(candidates) > 1:
-            stop.poi_id = ''
-            stop.location_note = '存在多个相似地点或分店，请指定完整地点名称'
-            return
+            street = stop.kind in ('sight', 'break') and re.search(r'(?:路|街|广场)$', query)
+            street_points = [p for p in candidates if p['name'] == query and any(
+                category in p.get('type', '') for category in ('地名地址', '道路', '风景名胜'))] if street else []
+            if street_points:
+                # A road can have several real map reference points; these are not
+                # restaurant/museum branches. Select deterministically, then query its route.
+                candidates = [min(street_points, key=lambda p: p['id'])]
+                stop.anchor_note = '开放街道有多个高德真实参考点，选用其中一个作为通勤参考；不代表完整街段或核实入口。'
+            else:
+                stop.poi_id = ''
+                stop.location_note = '存在多个相似地点或分店，请指定完整地点名称'
+                return
         if not candidates:
             stop.poi_id = ''
             stop.location_note = f'在{stop.city}内没有找到足够匹配的地点，请核对名称'
@@ -387,12 +429,16 @@ class Amap:
                 pass  # A missing/invalid fare does not invalidate verified road geometry.
         return result
 
-    async def enrich(self, itinerary, mode, compare_modes=False, day_indices=None, optimize_meals=False, protected_text='', enrich_details=False):
+    async def enrich(self, itinerary, mode, compare_modes=False, day_indices=None, optimize_meals=False, protected_text='', enrich_details=False, require_meal_prices=False):
         routes = []
+        self.planning_adjustments = []
+        from .meals import restaurant_key
+        used_restaurants = {restaurant_key(s) for i, d in enumerate(itinerary.days)
+                            if day_indices is not None and i not in day_indices for s in d.stops if s.kind == 'meal'}
         for day_index, day in enumerate(itinerary.days):
             if day_indices is not None and day_index not in day_indices:
                 continue
-            for index, stop in enumerate(day.stops):
+            async def resolve_stop(index, stop):
                 stop.id = stop.id or f'd{day_index + 1}s{index + 1}'
                 if self.emit:
                     await self.emit('status', {'message': f'核对第 {day_index + 1} 天地点：{stop.name}'})
@@ -419,7 +465,7 @@ class Amap:
                         previous = day.stops[index - 1]
                         if city_key(previous.city) != city_key(stop.city):
                             stop.location_note = '跨城活动不能继承上一城市位置，请明确休息地点'
-                            continue
+                            return
                         stop.location = previous.location
                         stop.location_status = previous.location_status
                         stop.poi_id = previous.poi_id
@@ -432,10 +478,43 @@ class Amap:
                 if self.emit:
                     await self.emit('tool', {'name': '核对地点', 'arguments': {'city': stop.city, 'name': stop.name},
                                             'summary': stop.matched_name or stop.location_note})
+            # Resolve independent POIs concurrently; inherited locations need their predecessor.
+            dependent = lambda stop: stop.location_behavior == 'same_as_previous' or (stop.kind == 'break' and stop.location_behavior == 'unlocated')
+            await gather_queries(resolve_stop(index, stop) for index, stop in enumerate(day.stops) if not dependent(stop))
+            for index, stop in enumerate(day.stops):
+                if dependent(stop):
+                    await resolve_stop(index, stop)
+            if require_meal_prices:
+                # Do not regenerate a whole trip for an optional point that could
+                # not be verified. Preserve every city's visit on every day and
+                # never discard a place explicitly named in the user's request.
+                kept = []
+                removed = []
+                for stop in day.stops:
+                    protected = any(name and name in protected_text for name in (stop.name, stop.place_name, stop.area_name))
+                    other_visit = any(other is not stop and other.kind in ('sight', 'break')
+                        and other.location_status == 'verified' and other.location
+                        and other.location_behavior != 'same_as_previous'
+                        and city_key(other.city) == city_key(stop.city) for other in day.stops)
+                    if (stop.kind in ('sight', 'break') and stop.location_status != 'verified'
+                            and not protected and other_visit):
+                        removed.append(stop)
+                    else:
+                        kept.append(stop)
+                if removed:
+                    day.stops = kept
+                    removed_ids = {s.id for s in removed}
+                    day.expenses = [e for e in day.expenses if e.stop_id not in removed_ids or e.category in ('hotel', 'food', 'transport')]
+                    message = f'第{day_index + 1}天移除未能核实的可选地点「' + '、'.join(s.name for s in removed) + '」，保留当天该城市的真实游览点并重新核对剩余路线；未删除用户指定的地点。'
+                    self.planning_adjustments.append(message)
+                    if self.emit:
+                        await self.emit('status', {'message': message})
             if optimize_meals:
-                from .locality import optimize_day_meals
+                from .locality import optimize_day_meals, repair_day_meals
+                if require_meal_prices:
+                    await repair_day_meals(self, day, protected_text)
                 original_meals = {s.id: s.poi_id for s in day.stops if s.kind == 'meal'}
-                await optimize_day_meals(self, day, protected_text)
+                await optimize_day_meals(self, day, protected_text, require_prices=require_meal_prices)
                 if enrich_details:
                     from .place_info import enrich_place
                     for stop in day.stops:
@@ -446,13 +525,19 @@ class Amap:
                             stop.food_reference = ''
                             stop.information_queried_at = None
                             await enrich_place(self, stop)
-            for previous, current in zip(day.stops, day.stops[1:]):
+                if require_meal_prices:
+                    # Check final choices after detour substitutions too. Branches
+                    # of one chain must not masquerade as varied daily meals.
+                    await repair_day_meals(self, day, protected_text, used_restaurants)
+            if require_meal_prices:
+                from .feasibility import price_meals
+                price_meals(itinerary, day_index)
+            async def resolve_leg(previous, current):
                 selected_mode = 'walking' if mode == 'auto' else mode
                 leg = RouteLeg(day_index=day_index, from_id=previous.id, to_id=current.id, mode=selected_mode,
                                queried_at=datetime.now(timezone.utc), note='地点未定位，无法计算路线')
                 if previous.city and current.city and city_key(previous.city) != city_key(current.city):
-                    routes.append(leg.model_copy(update={'scope': 'intercity', 'note': '跨城移动，详见跨城交通；不绘制市内导航路线'}))
-                    continue
+                    return leg.model_copy(update={'scope': 'intercity', 'note': '跨城移动，详见跨城交通；不绘制市内导航路线'})
                 if previous.location and current.location:
                     try:
                         if previous.poi_id == current.poi_id and previous.location == current.location:
@@ -505,10 +590,11 @@ class Amap:
                                 leg.note = '公交未返回方案；该短途采用高德实际步行路线，可在下方切换其他方式。' + walking.note
                 else:
                     leg.failure_code = 'missing_location'
-                routes.append(leg)
                 if self.emit:
                     await self.emit('tool', {'name': {'auto': '比较并选取最快市内交通', 'walking': '查询步行路线', 'driving': '查询驾车路线',
                         'taxi': '查询打车道路与出租车估价', 'transit': '查询公交地铁路线', 'bicycling': '查询骑行路线'}[mode],
                         'arguments': {'from': previous.name, 'to': current.name},
                         'summary': f'{leg.distance_m} 米 · {round(leg.duration_s / 60)} 分钟' if leg.available else leg.note})
+                return leg
+            routes.extend(await gather_queries(resolve_leg(previous, current) for previous, current in zip(day.stops, day.stops[1:])))
         return routes

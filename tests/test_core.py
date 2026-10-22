@@ -58,8 +58,8 @@ def test_time_overlap_insufficient_transfer_duplicate_and_budget():
     second = itinerary.days[0].stops[1]
     second.start = '09:50'; second.poi_id = 'POI1'
     report = validate_core(normalized_input(request, itinerary, routes))
-    assert {'over_budget', 'time_overlap', 'transfer_time'} <= {i['code'] for i in report['errors']}
-    assert {i['code'] for i in report['warnings']} == {'duplicate_stop'}
+    assert {'time_overlap', 'transfer_time'} <= {i['code'] for i in report['errors']}
+    assert {i['code'] for i in report['warnings']} == {'duplicate_stop', 'over_budget'}
 
 
 def test_route_duration_rounds_up_and_unknown_is_not_passed():

@@ -110,6 +110,8 @@ async def test_generation_and_revision_correct_before_saving_but_refresh_does_no
     trip.start_date = (datetime.now(timezone(timedelta(hours=8))) + timedelta(days=2)).date()
     itinerary.days[0].date = trip.start_date
     itinerary.days[0].stops[0].city = '上海'
+    itinerary.days[0].stops[0].location = (121.49, 31.23)
+    itinerary.days[0].stops[0].location_status = 'verified'
     store = Store(tmp_path / 'plans.sqlite3')
     monkeypatch.setattr(main, 'store', store)
     monkeypatch.setattr(main, 'validator', Validator())

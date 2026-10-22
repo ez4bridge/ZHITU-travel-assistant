@@ -21,14 +21,17 @@ from .config import settings, ROOT
 from .models import TripRequest, PlanRecord, RevisionRequest, RouteSelection, StudyQuestion, PhotoQuestion, ConversationCreate, GuideQuery
 from .amap import Amap
 from .agent import generate_itinerary
+from .day_revision import generate_day_itinerary
+from .budget import optimize_budget, budget_advice
 from .storage import Store
 from .validation import validator
 from .cities import city_catalog
-from .railway import Railway
+from .railway import Railway, sample_options
 from .planning import repair_schedule, recost_all
+from .feasibility import check_departure, schedule_journey, price_meals, require_feasible
 from .locality import prepare_accommodation
 from .itinerary_evidence import bind_stop_expenses, audit_guides, normalize_ticket_quantities
-from .meals import align_meals
+from .meals import align_meals, prepare_meal_slots, require_meal_coverage, meal_notes
 from .build_info import source_fingerprint
 from .conversation import ConversationStore, ConversationError, context_for, encoded, turn_memory
 from .qa_usage import UsageCollector
@@ -394,7 +397,7 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
             _active_tasks += 1
             started = monotonic()
             amap = Amap(trip.city_route, emit)
-            rail = Railway(trip, emit)
+            rail = Railway(trip, emit, share_snapshots=True)
             stage = 'refresh' if refresh else 'agent'
             try:
                 async with asyncio.timeout(180):
@@ -414,52 +417,107 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                             effective_trip, knowledge, amap, emit, validator, previous, instruction, weather=weather)
                         adjustments, baseline, same_activities = [], {}, False
                     else:
-                        itinerary = previous.itinerary.model_copy(deep=True) if refresh else await generate_itinerary(trip, amap, emit, previous, instruction, rail=rail, weather=weather, weather_by_city=weather_by_city)
-                        if previous and day_index is not None:
-                            for index in range(len(itinerary.days)):
-                                if index != day_index:
-                                    itinerary.days[index] = previous.itinerary.days[index].model_copy(deep=True)
-                            itinerary.transfers = [t.model_copy(deep=True) for t in previous.itinerary.transfers]
-                        if not refresh and day_index is None:
-                            await rail.enrich(itinerary)
-                        itinerary.guide_insights = [i for i in itinerary.guide_insights if i.source_index < len(trip.guides)]
-                        prepare_accommodation(itinerary, trip, day_index)
-                        stage = 'map_enrichment'
-                        routes = await amap.enrich(itinerary, trip.mode, compare_modes=trip.compare_modes,
-                                                   day_indices={day_index} if day_index is not None else None,
-                                                   optimize_meals=True, protected_text=f'{trip.preferences} {instruction} ' + (' '.join(g.text for g in trip.guides) if trip.guide_mode == 'prefer' else ''), enrich_details=True)
-                        if previous and day_index is not None:
-                            routes.extend(r.model_copy(deep=True) for r in previous.routes if r.day_index != day_index)
-                            routes.sort(key=lambda r: r.day_index)
-                        if refresh:
-                            for route in routes:
-                                old = next((r for r in previous.routes if r.day_index == route.day_index
-                                            and r.from_id == route.from_id and r.to_id == route.to_id), None)
-                                option = next((o for o in route.alternatives if old and old.user_selected and o.mode == old.mode and o.available), None)
-                                if option:
-                                    for key, value in option.model_dump().items():
-                                        setattr(route, key, value)
-                                    route.user_selected = True
-                                    route.selection_reason = '保留你手动选择的交通方式；本次已重新查询路线。'
-                        recost_all(trip, itinerary, routes, day_index)
-                        cost_adjustments = normalize_ticket_quantities(trip, itinerary, day_index) if not refresh else []
-                        bind_stop_expenses(itinerary, day_index)
-                        audit_guides(trip, itinerary)
-                        baseline = {s.id: (s.start, s.end) for d in itinerary.days for s in d.stops}
-                        same_activities = refresh and [
-                            (d.date, [(s.id, s.name, s.kind, s.city, s.poi_id) for s in d.stops]) for d in itinerary.days
-                        ] == [(d.date, [(s.id, s.name, s.kind, s.city, s.poi_id) for s in d.stops]) for d in previous.itinerary.days]
-                        if same_activities and previous.schedule_baseline:
-                            baseline = previous.schedule_baseline.copy()
-                            for day in itinerary.days:
-                                for stop in day.stops:
-                                    if stop.id in baseline:
-                                        stop.start, stop.end = baseline[stop.id]
-                        adjustments = cost_adjustments + repair_schedule(itinerary, routes, trip.start_time, only_day=day_index)
-                        adjustments += align_meals(trip, itinerary, routes, day_index, f'{trip.preferences} {instruction}')
-                        await emit('status', {'message': '正在校验时间、真实通行时长和全员预算'})
-                        stage = 'validation'
-                        report = await validator.validate(trip, itinerary, routes)
+                        planning_instruction = instruction
+                        for planning_attempt in range(2):
+                            report = None
+                            itinerary = None
+                            try:
+                                if refresh:
+                                    itinerary = previous.itinerary.model_copy(deep=True)
+                                elif previous and day_index is not None:
+                                    itinerary = await generate_day_itinerary(trip, amap, emit, previous, planning_instruction, day_index)
+                                else:
+                                    itinerary = await generate_itinerary(trip, amap, emit, previous, planning_instruction, rail=rail, weather=weather, weather_by_city=weather_by_city)
+                                if previous and day_index is not None:
+                                    for index in range(len(itinerary.days)):
+                                        if index != day_index:
+                                            itinerary.days[index] = previous.itinerary.days[index].model_copy(deep=True)
+                                    itinerary.transfers = [t.model_copy(deep=True) for t in previous.itinerary.transfers]
+                                if not refresh and day_index is None:
+                                    await rail.enrich(itinerary)
+                                itinerary.guide_insights = [i for i in itinerary.guide_insights if i.source_index < len(trip.guides)]
+                                prepare_accommodation(itinerary, trip, day_index)
+                                meal_adjustments = prepare_meal_slots(trip, itinerary, day_index) if not refresh else []
+                                stage = 'map_enrichment'
+                                routes = await amap.enrich(itinerary, trip.mode, compare_modes=trip.compare_modes,
+                                                           day_indices={day_index} if day_index is not None else None,
+                                                           optimize_meals=True, protected_text=f'{trip.preferences} {instruction} ' + (' '.join(g.text for g in trip.guides) if trip.guide_mode == 'prefer' else ''), enrich_details=True, require_meal_prices=True)
+                                if previous and day_index is not None:
+                                    routes.extend(r.model_copy(deep=True) for r in previous.routes if r.day_index != day_index)
+                                    routes.sort(key=lambda r: r.day_index)
+                                if refresh:
+                                    for route in routes:
+                                        old = next((r for r in previous.routes if r.day_index == route.day_index
+                                                    and r.from_id == route.from_id and r.to_id == route.to_id), None)
+                                        option = next((o for o in route.alternatives if old and old.user_selected and o.mode == old.mode and o.available), None)
+                                        if option:
+                                            for key, value in option.model_dump().items():
+                                                setattr(route, key, value)
+                                            route.user_selected = True
+                                            route.selection_reason = '保留你手动选择的交通方式；本次已重新查询路线。'
+                                price_meals(itinerary, day_index)
+                                recost_all(trip, itinerary, routes, day_index)
+                                cost_adjustments = normalize_ticket_quantities(trip, itinerary, day_index) if not refresh else []
+                                bind_stop_expenses(itinerary, day_index)
+                                audit_guides(trip, itinerary)
+                                baseline = {s.id: (s.start, s.end) for d in itinerary.days for s in d.stops}
+                                same_activities = refresh and [
+                                    (d.date, [(s.id, s.name, s.kind, s.city, s.poi_id) for s in d.stops]) for d in itinerary.days
+                                ] == [(d.date, [(s.id, s.name, s.kind, s.city, s.poi_id) for s in d.stops]) for d in previous.itinerary.days]
+                                if same_activities and previous.schedule_baseline:
+                                    baseline = previous.schedule_baseline.copy()
+                                    for day in itinerary.days:
+                                        for stop in day.stops:
+                                            if stop.id in baseline:
+                                                stop.start, stop.end = baseline[stop.id]
+                                adjustments = cost_adjustments + meal_adjustments + getattr(amap, 'planning_adjustments', []) + repair_schedule(itinerary, routes, trip.start_time, only_day=day_index)
+                                adjustments += align_meals(trip, itinerary, routes, day_index, f'{trip.preferences} {instruction}')
+                                adjustments += schedule_journey(trip, itinerary, routes, only_day=day_index)
+                                if not refresh:
+                                    require_meal_coverage(trip, itinerary, day_index)
+                                for i, d in enumerate(itinerary.days):
+                                    if day_index is None or i == day_index:
+                                        d.meal_note = meal_notes(d)
+                                await emit('status', {'message': '正在校验时间、真实通行时长和全员预算'})
+                                stage = 'validation'
+                                report = await validator.validate(trip, itinerary, routes)
+                                if not report.errors and report.total_cents > report.budget_cents:
+                                    await emit('status', {'message': '费用超出预算，正在使用已核验的较低费用交通方案降本，无需重新查询'})
+                                    itinerary, routes, budget_changes = optimize_budget(trip, itinerary, routes, rail, day_index)
+                                    adjustments += budget_changes
+                                    report = await validator.validate(trip, itinerary, routes)
+                                if not refresh:
+                                    require_meal_coverage(trip, itinerary, day_index)
+                                for i, d in enumerate(itinerary.days):
+                                    if day_index is None or i == day_index:
+                                        d.meal_note = meal_notes(d)
+                                require_feasible(report)
+                                break
+                            except ValueError as error:
+                                if itinerary is None or planning_attempt or getattr(amap, 'planning_repairs', 0) or refresh or day_index is not None:
+                                    raise
+                                amap.planning_repairs = 1
+                                evidence = {
+                                    'failure': str(error),
+                                    'budget_yuan': str(trip.budget),
+                                    'total_cents': report.total_cents if report else None,
+                                    'transfers': [t.model_dump(mode='json') for t in itinerary.transfers],
+                                    'actual_rail_options': [
+                                        {'from_city': key[0], 'to_city': key[1], 'date': key[2],
+                                         'status': value['status'], 'message': value['message'],
+                                         'options': sample_options(value['options'])}
+                                        for key, value in rail.query_cache.items()],
+                                    'days': [{'date': str(d.date), 'stops': [
+                                        {'id': s.id, 'name': s.name, 'city': s.city, 'start': s.start, 'end': s.end,
+                                         'poi_id': s.poi_id, 'verified': s.location_status == 'verified',
+                                         'amap_per_person_yuan': str(s.average_cost_yuan) if s.average_cost_yuan else None}
+                                        for s in d.stops]} for d in itinerary.days],
+                                }
+                                planning_instruction = instruction + '\n上次初稿未发布。根据以下实际核验数据修正一次；保留用户城市顺序、日期与预算。先固定交通时间，减少冲突的可选活动；换掉无定位或无人均参考的餐馆，预算不足须选择实际更便宜的餐馆和活动，不能伪造低价或省略交通。\n' + json.dumps(evidence, ensure_ascii=False)
+                                await emit('status', {'message': '初稿未通过实际路线、餐费或预算检查，正在依据核验结果修正一次；未通过不会发布'})
+                    require_feasible(report)
+                    rail.require_verified(itinerary)
+                    budget_advice(effective_trip, itinerary, report)
                     plan = PlanRecord(id=str(uuid4()), parent_id=previous.id if previous else None,
                         revision=previous.revision + 1 if previous else 1, created_at=datetime.now(timezone.utc),
                         request=effective_trip, itinerary=itinerary, routes=routes, validation=report, revision_instruction=instruction,
@@ -526,10 +584,13 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
 
 @app.post('/api/plans/generate')
 async def generate(trip: TripRequest, request: Request):
+    trip.confirmed_hotel = ''  # Legacy field remains readable in saved records only.
     if trip.study and not knowledge.ready:
         raise HTTPException(503, knowledge.message)
-    if trip.start_date < datetime.now(timezone(timedelta(hours=8))).date():
-        raise HTTPException(422, '新行程不能从过去日期开始，请更新出行日期')
+    try:
+        check_departure(trip)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
     return stream_plan(request, trip)
 
 
@@ -537,6 +598,9 @@ async def generate(trip: TripRequest, request: Request):
 async def revise(plan_id: str, body: RevisionRequest, request: Request):
     previous = await get_plan(plan_id)
     trip = body.trip or previous.request
+    trip.confirmed_hotel = ''
+    if len(trip.city_route) > 5:
+        raise HTTPException(422, '新规划最多 5 个目的地；旧的六城方案可查看，请调整城市后重新生成。')
     if bool(trip.study) != bool(previous.request.study):
         raise HTTPException(422, '切换普通旅行与研学请重新生成')
     if body.study_patch and not previous.request.study:
@@ -546,8 +610,10 @@ async def revise(plan_id: str, body: RevisionRequest, request: Request):
             raise HTTPException(503, knowledge.message)
         if body.day_index is not None:
             raise HTTPException(422, '研学为单日行程，请使用整体调整')
-    if trip.start_date < datetime.now(timezone(timedelta(hours=8))).date():
-        raise HTTPException(422, '修改历史行程时请先将出行日期更新为今天或未来日期')
+    try:
+        check_departure(trip)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
     if trip.destination != previous.request.destination:
         raise HTTPException(422, '更换目的地请重新生成行程')
     if body.day_index is not None and (trip.days != previous.request.days or trip.start_date != previous.request.start_date
@@ -594,7 +660,16 @@ async def select_route(plan_id: str, body: RouteSelection):
         raise HTTPException(422, str(error)) from None
     plan.adjustments = repair_schedule(plan.itinerary, plan.routes, plan.request.start_time, only_day=body.day_index)
     plan.adjustments += align_meals(plan.request, plan.itinerary, plan.routes, body.day_index, plan.request.preferences)
+    try:
+        plan.adjustments += schedule_journey(plan.request, plan.itinerary, plan.routes)
+        price_meals(plan.itinerary)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
     plan.validation = await validator.validate(plan.request, plan.itinerary, plan.routes)
+    try:
+        require_feasible(plan.validation)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
     plan.routing_revision = previous.routing_revision + 1
     # Revalidate to recompute authoritative expense category totals before storage.
     plan = PlanRecord.model_validate(plan.model_dump())

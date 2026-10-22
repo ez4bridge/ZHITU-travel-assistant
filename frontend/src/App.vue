@@ -21,15 +21,14 @@ import WeatherCard from './components/WeatherCard.vue'
 import PlanRecovery from './components/PlanRecovery.vue'
 import PlaceGuide from './components/PlaceGuide.vue'
 import { api, stream } from './api'
+import { useDepartureClock, futureDeparture, defaultDepartureDate } from './departure'
 import { journeyCities, transferCoverage, transportRequestChanged, transportScopeText } from './transportScope'
 import type { TripRequest, Plan, Health, HistoryItem, ToolEvent, ValidationReport, StudyCatalog, DestinationStay, Mode, RouteLeg, WeatherSnapshot } from './types'
 
 const { reduced: reducedMotion, motion: pageMotion, setHero: setMotionHero, introPlaying, toggleMotion } = usePageMotion()
 
-function localDate() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+const { today, earliest } = useDepartureClock()
+const localDate = defaultDepartureDate
 function travelDefaults() { return { destinations: [] as DestinationStay[], intercity_mode: 'train' as const, include_origin_transport: false, return_to_origin: false, guides: [], guide_mode: 'prefer' as const, compare_modes: true, confirmed_hotel: '' } }
 const revisionScope = ref('all'), mapCity = ref('')
 const form = reactive<TripRequest>({ ...travelDefaults(), destinations: [{ city: '上海', preferred_days: 3 }], origin: '', destination: '上海', start_date: localDate(), start_time: '09:00',
@@ -186,6 +185,10 @@ async function openHistory(id: string) {
 
 async function run(isRevision = false, refresh = false) {
   if (busy.value || checking.value || (isRevision && (!plan.value || !revision.value.trim()))) return
+  if (!refresh && !futureDeparture(form.start_date, form.start_time)) {
+    error.value = '出行日期和首日开始时间必须晚于当前北京时间。'; return
+  }
+  form.confirmed_hotel = ''
   if (!studyMode.value && (form.destinations.length > 5 || (isRevision && destinationRows(plan.value!.request).length > 5))) {
     error.value = '最多五个目的地。旧六城方案请删减后点击“重新规划一份行程”。'; return
   }
@@ -331,13 +334,12 @@ function followGuides() {
               <p v-if="hasIntercityTravel" class="form-note" role="status">本次提交交通：{{ journeyCities(form).join(' → ') }}；铁路可查询参考车次，机票仅提供估算。</p>
               <p v-if="transportPending" class="stay-budget-note" role="status">当前交通选项与已显示行程不同。勾选不会改写旧行程，请点击“重新规划一份行程”使当前选择参与规划和预算。</p>
               <p v-if="Math.ceil(preferredDays) > 10" class="stay-budget-note" role="status">各站游玩天数合计最多 10 天，请减少部分城市的时长。</p>
-              <div class="field-row"><label class="field"><span>出行日期</span><div class="input-wrap"><input v-model="form.start_date" type="date" required aria-label="出行日期" /></div></label><label class="field time-field"><span>首日开始</span><div class="input-wrap"><input v-model="form.start_time" type="time" required aria-label="首日开始时间" /></div></label></div>
+              <div class="field-row"><label class="field"><span>出行日期</span><div class="input-wrap"><input v-model="form.start_date" type="date" :min="today" required aria-label="出行日期" /></div></label><label class="field time-field"><span>首日开始</span><div class="input-wrap"><input v-model="form.start_time" type="time" :min="form.start_date === today ? earliest.time : undefined" required aria-label="首日开始时间" /></div></label></div>
               <label class="field"><span>同行人数</span><div class="input-wrap"><Users :size="16" /><input v-model.number="form.people" type="number" min="1" max="50" required /><span class="input-unit">人</span></div></label>
               <label class="field"><span>全员总预算 <small>全程含所选跨城交通</small></span><div class="input-wrap"><Wallet :size="17" /><input v-model.number="form.budget" type="number" min="1" max="10000000" step="0.01" required /><span class="input-unit">元</span></div></label>
               <div class="field"><span>旅行节奏</span><div class="segmented"><button type="button" :class="{ selected: form.style === 'relaxed' }" @click="form.style = 'relaxed'">慢慢逛</button><button type="button" :class="{ selected: form.style === 'balanced' }" @click="form.style = 'balanced'">刚刚好</button><button type="button" :class="{ selected: form.style === 'compact' }" @click="form.style = 'compact'">多看些</button></div></div>
               <label v-if="hasIntercityTravel" class="field"><span>跨城交通偏好</span><div class="input-wrap"><Route :size="17" /><select v-model="form.intercity_mode" aria-label="跨城交通偏好"><option value="train">铁路（高铁／火车）</option><option value="flight">飞机</option><option value="driving">自驾</option><option value="bus">长途汽车</option></select></div></label>
               <p class="form-note">市内交通自动比较地图通行时间，优先显示最快可用方式；结果中可逐段更换。</p>
-              <label class="field"><span>首站城市已确认酒店（可选）</span><div class="input-wrap"><BedDouble :size="16" /><input v-model="form.confirmed_hotel" maxlength="120" placeholder="留空只推荐住宿片区" /></div></label>
               <label class="field preferences-field"><span>还有什么小期待？</span><textarea v-model="form.preferences" rows="3" maxlength="2000" placeholder="想看建筑、尝本地美食，或带孩子轻松逛逛…"></textarea></label>
               <GuideInput v-model="form.guides" v-model:mode="form.guide_mode" />
               <button class="primary-button generate-button" type="submit" :disabled="!health?.capabilities.planning"><LoaderCircle v-if="busy" :size="18" class="spin" /><Sparkles v-else :size="18" />{{ busy ? '正在规划旅程' : plan ? '重新规划一份行程' : '生成我的专属行程' }}<ArrowRight v-if="!busy" :size="17" /></button>
@@ -356,6 +358,7 @@ function followGuides() {
 
           <template v-if="plan && day">
             <p v-if="retainedPlanNotice" class="stay-budget-note card" role="status">{{ retainedPlanNotice }}</p>
+            <p v-if="report && !report.errors.length && report.total_cents > report.budget_cents" class="stay-budget-note card" role="status">行程已生成并通过时间与路线检查。全员估算 ¥{{ money(report.total_cents) }}，比预算超出 ¥{{ money(report.total_cents - report.budget_cents) }}；请查看费用明细与降本建议。</p>
             <div class="plan-heading card"><div><span class="eyebrow"><MapPin :size="13" /> {{ plan.request.destination }} · {{ plan.request.days }} 天 · {{ plan.request.people }} 人</span><h2>{{ plan.itinerary.title }}</h2><p>{{ plan.itinerary.summary }}</p></div><span class="revision-badge">版本 {{ plan.revision }}</span></div>
             <CityTransfers v-if="!studyMode" :transfers="plan.itinerary.transfers || []" :request="plan.request" />
             <PlanRecovery :plan="plan" :busy="busy" :checking="checking" @refresh="run(false, true)" @revise="reviseProblems" />

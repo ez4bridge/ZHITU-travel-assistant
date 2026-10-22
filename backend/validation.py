@@ -53,6 +53,8 @@ def normalized_input(request, itinerary, routes, study_context=None):
         for stop in day.stops:
             if '餐饮绕路待调整' in stop.location_note:
                 warnings.append(issue('meal_detour', stop.location_note, index, stop.id))
+            if '暂保留重复餐馆' in stop.location_note:
+                warnings.append(issue('meal_repetition', stop.location_note, index, stop.id))
             if stop.kind != 'break':
                 message = '已有地图营业时间参考，出行日开放与预约仍需官方核实' if stop.opening_hours_status == 'map_reference' else '营业时间、预约要求未验证'
                 unknowns.append(issue('opening_hours', f'{stop.name}：{message}', index, stop.id))
@@ -69,6 +71,8 @@ def normalized_input(request, itinerary, routes, study_context=None):
     if request.guides and (not itinerary.guide_decisions or any(d.status == 'not_used' for d in itinerary.guide_decisions)):
         unknowns.append(issue('guide_adoption', '部分攻略未能落实到活动，请查看攻略采纳与调整说明'))
     unknowns.insert(0, issue('estimated_prices', '费用为参考估算；交通区分地图估价、公开费率和预算假设，非实时订单报价'))
+    if any(t.mode == 'train' and t.schedule_status == 'queried' and t.price_status != 'reference' for t in itinerary.transfers):
+        unknowns.append(issue('rail_price_unconfirmed', '部分铁路时刻和席位已查询，但参考票价暂未取得；费用为明确标注的预算预留，需核对实际票价'))
     if request.study:
         from .study_rules import study_issues
         study_errors, study_unknowns = study_issues(request, itinerary, routes, study_context)
@@ -109,7 +113,8 @@ def validate_core(data):
         warnings.extend(journey_warnings)
         unknowns.extend(journey_unknowns)
     if data['total_cents'] > data['budget_cents']:
-        errors.append(issue('over_budget', '估算总费用超过全员预算'))
+        excess = (data['total_cents'] - data['budget_cents']) / 100
+        warnings.append(issue('over_budget', f'全员估算费用超出预算{excess:.2f}元；行程可交付，但尚未满足预算目标，请查看费用明细与降本建议'))
     seen = set()
     for index, day in enumerate(data['days']):
         stops = day['stops']

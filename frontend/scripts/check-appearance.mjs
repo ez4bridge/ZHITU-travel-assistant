@@ -42,6 +42,7 @@ export function harness(search = '', reduced = false) {
       IntersectionObserver: Observer, document, window, performance: { now: () => elapsedTime },
       sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
       setTimeout: (fn, delay) => { timers.set(++timerId, { fn, delay, due: elapsedTime + delay }); return timerId }, clearTimeout: id => timers.delete(id),
+      setInterval: (fn, delay) => { timers.set(++timerId, { fn, delay, due: elapsedTime + delay }); return timerId }, clearInterval: id => timers.delete(id),
       require(name) {
         if (name === 'vue') return { ...vue, onMounted: fn => hooks.push(fn), onBeforeUnmount: fn => cleanups.push(fn) }
         if (name === 'lucide-vue-next' || name.endsWith('.vue')) return new Proxy({}, { get: () => ({}) })

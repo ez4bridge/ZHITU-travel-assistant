@@ -17,6 +17,212 @@ def region():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('behavior', ['unlocated', 'same_as_previous'])
+async def test_named_leisure_destination_is_verified_instead_of_inheriting_a_restaurant(behavior):
+    amap = Amap('苏州市')
+    stop = Stop(id='street', name='观前街自由活动', city='苏州市', kind='break',
+        location_behavior=behavior, start='09:00', end='10:00')
+    amap.search = AsyncMock(return_value=[{'id': 'street-poi', 'name': '观前街', 'city': '苏州市',
+        'location': [120.62, 31.31], 'address': '观前街', 'type': '风景名胜'}])
+    try:
+        await amap.resolve(stop)
+        assert stop.location_behavior == 'poi'
+        assert stop.poi_id == 'street-poi' and stop.location_status == 'verified'
+        assert stop.place_name == '观前街'
+    finally:
+        await amap.close()
+
+
+@pytest.mark.asyncio
+async def test_multiple_real_points_on_one_named_road_are_not_restaurant_branch_ambiguity():
+    amap = Amap('上海')
+    amap.search = AsyncMock(return_value=[{'id': code, 'name': '南京东路', 'city': '上海',
+        'location': point, 'address': '南京东路', 'type': '地名地址信息;道路名'}
+        for code, point in [('road-b', [121.49, 31.24]), ('road-a', [121.48, 31.24])]])
+    stop = Stop(name='南京东路自由活动', city='上海', kind='break',
+        start='13:00', end='14:00', location_behavior='unlocated')
+    try:
+        await amap.resolve(stop)
+        assert stop.location_status == 'verified' and stop.poi_id == 'road-a'
+        assert '通勤参考' in stop.anchor_note
+    finally:
+        await amap.close()
+
+
+@pytest.mark.asyncio
+async def test_historic_street_suffix_does_not_create_a_fictitious_separate_poi():
+    amap = Amap('苏州')
+    amap.search = AsyncMock(return_value=[{'id': code, 'name': '平江路', 'city': '苏州',
+        'location': point, 'address': '平江路', 'type': '地名地址信息;道路名'}
+        for code, point in [('road-b', [120.63, 31.32]), ('road-a', [120.62, 31.32])]])
+    stop = Stop(name='平江路历史街区', place_name='平江路历史街区', area_name='平江路历史街区',
+        city='苏州', kind='sight', start='13:00', end='14:00', location_behavior='area')
+    try:
+        await amap.resolve(stop)
+        assert stop.location_status == 'verified' and stop.poi_id == 'road-a'
+        assert stop.place_name == stop.area_name == '平江路'
+        amap.search.assert_awaited_once_with('平江路')
+    finally:
+        await amap.close()
+
+
+@pytest.mark.asyncio
+async def test_open_street_without_a_gate_can_use_its_actual_provider_point():
+    amap = Amap('杭州')
+    stop = Stop(name='河坊街自由活动', city='杭州', kind='break', area_name='河坊街',
+        location_behavior='area', poi_id='street', location_status='verified',
+        location=(120.1, 30.2), start='13:00', end='14:00')
+    amap.request = AsyncMock(return_value={'pois': [{'id': 'street', 'name': '河坊街景区',
+        'cityname': '杭州市', 'location': '120.17,30.24'}]})
+    try:
+        await enrich_place(amap, stop)
+        assert stop.location == (120.17, 30.24) and stop.location_status == 'verified'
+        assert '不是核实入口' in stop.anchor_note
+    finally:
+        await amap.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('protected', [False, True])
+async def test_unverified_optional_stop_can_be_removed_but_required_place_is_preserved(protected):
+    _, itinerary, _ = sample()
+    amap = Amap('上海')
+    async def resolve(stop):
+        stop.city = '上海'
+        if stop.id == 'b':
+            stop.location = None
+            stop.location_status = 'unknown'
+    amap.resolve = resolve
+    amap.route_in_city = AsyncMock()
+    itinerary.days[0].expenses.append(Expense(label='住宿', category='hotel', unit_cost=300, stop_id='b'))
+    try:
+        routes = await amap.enrich(itinerary, 'walking', require_meal_prices=True,
+            protected_text='一定要去豫园' if protected else '')
+        assert len(itinerary.days[0].stops) == (2 if protected else 1)
+        assert bool(amap.planning_adjustments) is not protected
+        assert any(e.category == 'hotel' for e in itinerary.days[0].expenses)
+        amap.route_in_city.assert_not_awaited()
+    finally:
+        await amap.close()
+
+
+@pytest.mark.asyncio
+async def test_repair_never_removes_the_only_visit_for_a_city_on_that_day():
+    _, itinerary, _ = sample()
+    itinerary.days[0].stops = itinerary.days[0].stops[:1]
+    stop = itinerary.days[0].stops[0]
+    stop.location_status = 'unknown'
+    stop.location = None
+    amap = Amap('上海')
+    amap.resolve = AsyncMock()
+    try:
+        await amap.enrich(itinerary, 'walking', require_meal_prices=True)
+        assert itinerary.days[0].stops == [stop]
+        assert not amap.planning_adjustments
+    finally:
+        await amap.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('protected', [False, True])
+async def test_unverified_meal_is_replaced_only_by_a_real_priced_restaurant(protected):
+    from backend.locality import repair_day_meals
+    _, itinerary, _ = sample()
+    for stop in itinerary.days[0].stops:
+        stop.city = '上海'
+    meal = Stop(id='meal', name='武康路周边午餐', kind='meal', city='上海',
+        start='12:00', end='13:00', location_behavior='unlocated')
+    itinerary.days[0].stops.append(meal)
+    amap = Amap('上海')
+    amap.places[('上海', '餐馆')] = [{'id': 'priced', 'name': '真实面馆', 'city': '上海',
+        'location': [121.49, 31.22], 'address': '上海', 'type': '餐饮服务'}]
+    amap.request = AsyncMock(return_value={'pois': [{'id': 'priced', 'name': '真实面馆',
+        'cityname': '上海市', 'business': {'cost': '36'}}]})
+    try:
+        await repair_day_meals(amap, itinerary.days[0], '一定要去武康路周边午餐' if protected else '')
+        if protected:
+            assert meal.location_status == 'unknown'
+            amap.request.assert_not_awaited()
+        else:
+            assert meal.name == '真实面馆' and meal.location_status == 'verified'
+            assert meal.average_cost_yuan == Decimal('36')
+            assert meal.information_source == 'https://www.amap.com/place/priced'
+            assert meal.meal_period == 'lunch'
+    finally:
+        await amap.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('protected', [False, True])
+async def test_repeat_chain_branch_replaced_with_different_real_priced_restaurant(protected):
+    from backend.locality import repair_day_meals
+    from backend.meals import restaurant_name_key, restaurant_key
+    _, itinerary, _ = sample()
+    day = itinerary.days[0]
+    for stop in day.stops:
+        stop.city = '上海'
+    meal = Stop(id='dinner', name='小杨生煎（商城路店）', kind='meal', city='上海',
+        start='18:00', end='19:00', meal_period='dinner', location=(121.49, 31.22),
+        poi_id='old', location_status='verified', average_cost_yuan=25,
+        information_source='https://www.amap.com/place/old')
+    day.stops.append(meal)
+    used = {restaurant_name_key('上海', '小杨生煎（宏伊广场店）')}
+    amap = Amap('上海')
+    async def request(path, params):
+        if path == '/v3/place/around':
+            return {'pois': [
+                {'id': 'repeat', 'name': '小杨生煎（第三分店）', 'location': '121.49,31.22', 'typecode': '050100'},
+                {'id': 'no-price', 'name': '无参考价餐馆', 'location': '121.49,31.22', 'typecode': '050100'},
+                {'id': 'new', 'name': '本帮菜饭店（外滩店）', 'location': '121.49,31.22', 'typecode': '050100'}]}
+        return {'pois': [{'id': params['id'], 'name': '本帮菜饭店（外滩店）' if params['id'] == 'new' else '无参考价餐馆',
+            'cityname': '上海市', 'business': {'cost': '48'} if params['id'] == 'new' else {}}]}
+    amap.request = AsyncMock(side_effect=request)
+    try:
+        await repair_day_meals(amap, day, '一定要吃小杨生煎（商城路店）' if protected else '', used)
+        assert meal.meal_period == 'dinner'
+        if protected:
+            assert meal.poi_id == 'old'
+            amap.request.assert_not_awaited()
+        else:
+            assert meal.poi_id == 'new' and meal.average_cost_yuan == Decimal('48')
+            assert meal.information_source == 'https://www.amap.com/place/new'
+            assert restaurant_key(meal) in used
+            assert not any(c.args[1].get('id') == 'repeat' for c in amap.request.await_args_list)
+    finally:
+        await amap.close()
+
+
+@pytest.mark.asyncio
+async def test_detour_optimization_never_substitutes_a_restaurant_without_price_data():
+    from backend.locality import optimize_day_meals
+    _, itinerary, _ = sample()
+    day = itinerary.days[0]
+    for stop in day.stops:
+        stop.city = '上海'
+    meal = Stop(id='meal', name='原餐馆', kind='meal', city='上海', start='10:00', end='10:30',
+        location=(121.7, 31.5), location_status='verified')
+    day.stops.insert(1, meal)
+    amap = Amap('上海')
+    async def route(origin, destination, mode, city):
+        return {'distance_m': 10000 if (121.7, 31.5) in (tuple(origin), tuple(destination)) else 1000}
+    amap.route_in_city = route
+    async def request(path, params):
+        if path == '/v3/place/around':
+            return {'pois': [{'id': code, 'name': name, 'location': '121.49,31.225',
+                'typecode': '050000', 'cityname': '上海市'} for code, name in [('tea', '无价格茶室'), ('priced', '真实面馆')]]}
+        return {'pois': [{'id': params['id'], 'name': '真实面馆', 'cityname': '上海市',
+                         'business': {'cost': '25'} if params['id'] == 'priced' else {}}]}
+    amap.request = request
+    try:
+        await optimize_day_meals(amap, day, require_prices=True)
+        assert meal.poi_id == 'priced'
+        await enrich_place(amap, meal)
+        assert meal.average_cost_yuan == Decimal('25')
+    finally:
+        await amap.close()
+
+
+@pytest.mark.asyncio
 async def test_area_selects_real_child_and_refresh_preserves_anchor(monkeypatch):
     amap = Amap('杭州')
     parent = {'id': 'parent', 'name': '西湖', 'cityname': '杭州市', 'business': {'cost': '999'},

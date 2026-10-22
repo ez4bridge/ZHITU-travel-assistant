@@ -92,7 +92,7 @@ def test_crosscity_costs_use_same_rounding_and_whole_party_budget():
     assert plan.expense_totals['transport'] == 120012
     assert sum(plan.expense_totals.values()) == result['total_cents']
     request.budget = 1000
-    assert 'over_budget' in {item['code'] for item in report(request, itinerary)['errors']}
+    assert 'over_budget' in {item['code'] for item in report(request, itinerary)['warnings']}
     itinerary.transfers[0].basis = 'group'
     assert report(request, itinerary)['total_cents'] == result['total_cents'] - 20002
 
@@ -205,6 +205,14 @@ async def test_multicity_generate_revise_and_history_keep_independent_costs(monk
     import backend.main as main
     from backend.validation import Validator
     request, original, _ = nationwide()
+    from datetime import timedelta
+    offset = (datetime.now(timezone.utc) + timedelta(days=2)).date() - request.start_date
+    request.start_date += offset
+    for day in original.days:
+        day.date += offset
+    for transfer in original.transfers:
+        transfer.departure_date += offset
+        transfer.arrival_date += offset
     monkeypatch.setattr(main, 'store', Store(tmp_path / 'national.sqlite3'))
     monkeypatch.setattr(main, 'validator', Validator())
     async def fake_generate(trip, amap, emit, previous=None, instruction='', rail=None, weather=None, weather_by_city=None):
@@ -214,7 +222,8 @@ async def test_multicity_generate_revise_and_history_keep_independent_costs(monk
             itinerary.transfers[0].unit_cost = Decimal('50')
         return itinerary
     monkeypatch.setattr(main, 'generate_itinerary', fake_generate)
-    monkeypatch.setattr(Amap, 'enrich', AsyncMock(return_value=[]))
+    from test_meals import dining_evidence_stub
+    monkeypatch.setattr(Amap, 'enrich', AsyncMock(side_effect=dining_evidence_stub))
     def result(response):
         assert 'event: error' not in response.text
         return json.loads(response.text.split('event: result\ndata: ')[1].split('\n\n')[0])

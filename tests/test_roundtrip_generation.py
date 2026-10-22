@@ -21,6 +21,10 @@ def roundtrip():
         {'from_city': '拉萨市', 'to_city': '广州', 'departure_date': request.start_date + timedelta(days=2),
          'arrival_date': request.start_date + timedelta(days=2), 'departure_time': '17:00', 'arrival_time': '22:00',
          'mode': 'flight', 'unit_cost': '900.50'}])
+    # A transport-only itinerary never visits the destination and is now rejected.
+    from backend.models import Stop
+    itinerary.days[1].stops = [Stop(id='visit', name='布达拉宫', city='拉萨市', kind='sight',
+        start='10:00', end='11:00', location=[91.117, 29.657], location_status='verified')]
     return request, itinerary
 
 
@@ -107,7 +111,8 @@ async def test_roundtrip_request_and_whole_party_fares_survive_sse_and_history(m
         assert trip.journey_cities == ['广州', '拉萨市', '广州']
         return valid.model_copy(deep=True)
     monkeypatch.setattr(main, 'generate_itinerary', generate)
-    monkeypatch.setattr(Amap, 'enrich', AsyncMock(return_value=[]))
+    from test_meals import dining_evidence_stub
+    monkeypatch.setattr(Amap, 'enrich', AsyncMock(side_effect=dining_evidence_stub))
     import json
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url='http://test') as client:
         response = await client.post('/api/plans/generate', json=request.model_dump(mode='json'))
@@ -117,4 +122,5 @@ async def test_roundtrip_request_and_whole_party_fares_survive_sse_and_history(m
     assert saved['request']['include_origin_transport'] and saved['request']['return_to_origin']
     assert len(saved['itinerary']['transfers']) == 2
     assert saved['expense_totals']['transport'] == 340150
-    assert saved['validation']['total_cents'] == 370150
+    assert saved['validation']['total_cents'] == 448150  # Four priced meals + two explicitly reserved rail meals.
+    assert saved['expense_totals']['hotel'] == 60000  # Two previously omitted nights.

@@ -312,15 +312,20 @@ def test_local_revision_keeps_other_days_and_routes(monkeypatch,tmp_path):
     generated=original.itinerary.model_copy(deep=True)
     generated.days[0].title='新安排'
     generated.days[1].title='不应该修改'
-    monkeypatch.setattr(main,'generate_itinerary',AsyncMock(return_value=generated))
-    enrich=AsyncMock(return_value=[original.routes[0].model_copy(deep=True)])
+    monkeypatch.setattr(main,'generate_day_itinerary',AsyncMock(return_value=generated))
+    from test_meals import dining_evidence_stub
+    async def enrich_with_dining(itinerary, *args, **kwargs):
+        result = await dining_evidence_stub(itinerary, *args, **kwargs)
+        return [original.routes[0].model_copy(deep=True) if r.from_id == 'a' and r.to_id == 'b' else r for r in result]
+    enrich=AsyncMock(side_effect=enrich_with_dining)
     monkeypatch.setattr(Amap,'enrich',enrich)
     with TestClient(main.app) as client:
         response=client.post('/api/plans/original/revise',json={'instruction':'只改第一天','day_index':0})
+        assert 'event: error' not in response.text, response.text
         result=json.loads(response.text.split('event: result\ndata: ')[1].split('\n\n')[0])
         assert result['itinerary']['days'][0]['title']=='新安排'
         assert result['itinerary']['days'][1]==second.model_dump(mode='json')
-        assert result['routes'][1]==original.routes[1].model_dump(mode='json')
+        assert [r for r in result['routes'] if r['day_index'] == 1] == [original.routes[1].model_dump(mode='json')]
         assert enrich.call_args.kwargs['day_indices']=={0}
         assert client.post('/api/plans/original/revise',json={'instruction':'改一下','day_index':9}).status_code==422
 
