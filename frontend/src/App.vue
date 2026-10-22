@@ -21,8 +21,9 @@ import ValidationCard from './components/ValidationCard.vue'
 import WeatherCard from './components/WeatherCard.vue'
 import PlanRecovery from './components/PlanRecovery.vue'
 import PlaceGuide from './components/PlaceGuide.vue'
-import { api, stream } from './api'
+import { api, stream, StreamError } from './api'
 import { useDepartureClock, futureDeparture, defaultDepartureDate } from './departure'
+import TravelBoundaryNotice from './components/TravelBoundaryNotice.vue'
 import { journeyCities, transferCoverage, transportRequestChanged, transportScopeText } from './transportScope'
 import { studyThemes } from './studySuggestions'
 import type { TripRequest, Plan, Health, HistoryItem, ToolEvent, ValidationReport, StudyCatalog, DestinationStay, Mode, RouteLeg, WeatherSnapshot } from './types'
@@ -49,6 +50,18 @@ const savedPlans: Record<string, Plan | null> = { travel: null, study: null }
 const health = ref<Health | null>(null), plan = ref<Plan | null>(null), history = ref<HistoryItem[]>([])
 const historyOpen = ref(false), busy = ref(false), progress = ref(''), error = ref(''), tools = ref<ToolEvent[]>([])
 const retainedPlanNotice = ref('')
+const boundaryCity = ref<string | null>(null)
+watch(error, value => { if (value) boundaryCity.value = null })
+function editBoundaryCity() {
+  const city = boundaryCity.value
+  boundaryCity.value = null
+  const index = form.destinations.findIndex(stay => stay.city.trim() === city)
+  const label = form.origin.trim() === city ? '出发城市' : `第${Math.max(index, 0) + 1}站城市`
+  nextTick(() => {
+    const input = document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)
+    input?.focus(); input?.select()
+  })
+}
 const weatherOverrides = ref<Record<string, WeatherSnapshot>>({}), weatherRetryErrors = ref<Record<string, string>>({}), weatherRetryCity = ref('')
 let weatherController: AbortController | null = null, weatherSequence = 0
 watch(() => plan.value?.id, () => {
@@ -147,7 +160,7 @@ function switchMode(toStudy: boolean) {
   studyMode.value = toStudy
   const next = toStudy ? 'study' : 'travel'
   Object.assign(form, JSON.parse(JSON.stringify(savedForms[next])), { study: savedForms[next].study || null })
-  plan.value = savedPlans[next]; error.value = ''; tools.value = []; revision.value = ''; retainedPlanNotice.value = ''
+  plan.value = savedPlans[next]; error.value = ''; boundaryCity.value = null; tools.value = []; revision.value = ''; retainedPlanNotice.value = ''
   setDay(0)
 }
 
@@ -188,7 +201,7 @@ async function openHistory(id: string) {
     Object.assign(form, travelDefaults(), plan.value.request, { study: plan.value.request.study || null })
     if (!plan.value.request.study) form.destinations = destinationRows(plan.value.request)
     savedPlans[studyMode.value ? 'study' : 'travel'] = plan.value
-    setDay(0); historyOpen.value = false; error.value = ''; tools.value = []; retainedPlanNotice.value = ''
+    setDay(0); historyOpen.value = false; error.value = ''; boundaryCity.value = null; tools.value = []; retainedPlanNotice.value = ''
   } catch (e) { if (token === runSequence) error.value = e instanceof Error ? e.message : '读取失败' }
 }
 
@@ -201,6 +214,7 @@ async function run(isRevision = false, refresh = false) {
   if (!studyMode.value && (form.destinations.length > 5 || (isRevision && destinationRows(plan.value!.request).length > 5))) {
     error.value = '最多五个目的地。旧六城方案请删减后点击“重新规划一份行程”。'; return
   }
+  boundaryCity.value = null
   const destinations = form.destinations.map(stay => ({ city: stay.city.trim(), preferred_days: stay.preferred_days == null ? 1 : Number(stay.preferred_days) }))
   if (!studyMode.value && !refresh && !isRevision && destinations.some(stay => !stay.city)) { error.value = '请填写每一站的目的地城市。'; return }
   if (!studyMode.value && !refresh && !isRevision && destinations.some(stay => /→|->|、|，|,|；|;|\n/.test(stay.city))) {
@@ -243,7 +257,11 @@ async function run(isRevision = false, refresh = false) {
       progress.value = '本次规划已取消，已有方案仍然保留'
       if (plan.value) retainedPlanNotice.value = '本次规划已取消，下方仍是原有行程，交通选择和预算尚未更新。'
     } else {
-      error.value = e instanceof Error ? e.message : '规划失败，请重试'
+      if (e instanceof StreamError && ['domestic_scope_unconfirmed', 'domestic_scope_outside'].includes(e.code)) {
+        boundaryCity.value = e.city
+      } else {
+        error.value = e instanceof Error ? e.message : '规划失败，请重试'
+      }
       if (plan.value) retainedPlanNotice.value = '本次未生成新行程，下方仍是原有版本，交通选择和预算尚未更新。'
     }
   } finally { if (token === runSequence) { busy.value = false; controller = null } }
@@ -336,7 +354,7 @@ function followGuides() {
           <div class="panel-heading"><div class="icon-tile"><SlidersHorizontal :size="19" /></div><div><h3>旅行偏好</h3><p>从几个小小的期待开始</p></div></div>
           <form @submit.prevent="run()">
             <fieldset :disabled="busy">
-              <label class="field"><span>出发城市 <small>可选</small></span><div class="input-wrap"><Compass :size="17" /><input v-model="form.origin" maxlength="40" placeholder="例如：北京" /></div></label>
+              <label class="field"><span>出发城市 <small>可选</small></span><div class="input-wrap"><Compass :size="17" /><input v-model="form.origin" aria-label="出发城市" maxlength="40" placeholder="国内城市，例如：北京" /></div></label>
               <div class="journey-options">
                 <label><input v-model="form.include_origin_transport" type="checkbox" :disabled="!form.origin.trim() || form.return_to_origin" /> 安排从出发地到首城的交通</label>
                 <label><input v-model="form.return_to_origin" type="checkbox" :disabled="!form.origin.trim()" @change="form.include_origin_transport = form.include_origin_transport || form.return_to_origin" /> 最后返回出发地</label>
@@ -365,6 +383,7 @@ function followGuides() {
 
         <section ref="resultSection" class="workspace" aria-live="polite">
           <StudyQA v-if="studyMode && !restoringStudy" :ready="Boolean(catalog?.ready)" :plan-id="plan?.id" :place-id="selectedStudyPlace" :place-name="day?.stops.find(stop => stop.id === selectedStopId)?.name" />
+          <TravelBoundaryNotice v-if="boundaryCity !== null" :city="boundaryCity" @edit="editBoundaryCity" @close="boundaryCity = null" />
           <div v-if="error" class="error-banner" role="alert"><CircleAlert :size="19" /><div><strong>这次没能顺利完成</strong><p>{{ error }}</p></div><button aria-label="关闭错误提示" @click="error = ''"><X :size="17" /></button></div>
           <div v-if="busy" class="progress-card card"><div class="progress-icon"><Compass :size="26" class="spin-slow" /></div><div><span class="eyebrow">A LITTLE PLANNING, A LOT TO DISCOVER</span><h3>{{ progress }}</h3><p>{{ plan ? "正在按当前选择生成新行程；下方暂为原有版本，新结果返回后才会更新交通与预算。" : "正在结合地点、路线和你的旅行偏好。通常需要几十秒。" }}</p></div><button class="text-button" @click="controller?.abort()">取消</button><div class="progress-line"></div></div>
 

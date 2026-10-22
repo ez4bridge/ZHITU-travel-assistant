@@ -207,7 +207,7 @@ async def test_regular_agent_receives_weather_without_extra_model_round(monkeypa
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('study', [False, True])
-async def test_generate_revise_history_and_recheck_share_server_snapshot(study, monkeypatch, tmp_path):
+async def test_generate_revise_history_and_recheck_share_server_snapshot(study, monkeypatch, tmp_path, offline_domestic_scope):
     import backend.main as main
     from backend.amap import Amap
     from backend.models import StudyContext

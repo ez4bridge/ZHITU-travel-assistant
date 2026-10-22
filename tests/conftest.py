@@ -31,3 +31,10 @@ def no_live_weather_in_http_tests(monkeypatch):
 def isolated_optional_railway(monkeypatch):
     # Normal regression tests must not depend on the developer's local service settings.
     monkeypatch.setattr(settings, 'rail_mcp_enabled', False)
+
+
+@pytest.fixture
+def offline_domestic_scope(monkeypatch):
+    """Orchestration tests mock upstream work; real scope checks have their own suite."""
+    import backend.main as main
+    monkeypatch.setattr(main, 'ensure_domestic_trip', AsyncMock())

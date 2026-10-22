@@ -100,7 +100,7 @@ def test_loading_legacy_history_does_not_silently_change_quantities():
 
 
 @pytest.mark.asyncio
-async def test_generation_and_revision_correct_before_saving_but_refresh_does_not_rewrite_old_costs(monkeypatch, tmp_path):
+async def test_generation_and_revision_correct_before_saving_but_refresh_does_not_rewrite_old_costs(monkeypatch, tmp_path, offline_domestic_scope):
     import backend.main as main
     from backend.amap import Amap
     from backend.storage import Store

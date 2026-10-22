@@ -121,7 +121,7 @@ def test_cached_cheaper_train_keeps_actual_schedule_and_ticket_price():
 
 
 @pytest.mark.asyncio
-async def test_over_budget_still_delivers_saves_and_reports_exact_difference(monkeypatch, tmp_path):
+async def test_over_budget_still_delivers_saves_and_reports_exact_difference(monkeypatch, tmp_path, offline_domestic_scope):
     import backend.main as main
     from backend.amap import Amap
     trip, itinerary, routes = sample()

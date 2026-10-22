@@ -89,7 +89,7 @@ def test_blocking_issues_cannot_be_published():
 
 
 @pytest.mark.asyncio
-async def test_invalid_sse_plan_is_never_saved_and_correction_is_bounded(monkeypatch, tmp_path):
+async def test_invalid_sse_plan_is_never_saved_and_correction_is_bounded(monkeypatch, tmp_path, offline_domestic_scope):
     import backend.main as main
     from backend.storage import Store
     from backend.amap import Amap
@@ -111,7 +111,7 @@ async def test_invalid_sse_plan_is_never_saved_and_correction_is_bounded(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_generate_endpoint_rejects_past_time_before_model_call(monkeypatch):
+async def test_generate_endpoint_rejects_past_time_before_model_call(monkeypatch, offline_domestic_scope):
     import backend.main as main
     trip, _, _ = sample()
     trip.start_date = datetime.now(timezone(timedelta(hours=8))).date() - timedelta(days=1)

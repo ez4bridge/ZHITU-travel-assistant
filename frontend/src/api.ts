@@ -1,3 +1,10 @@
+export class StreamError extends Error {
+  constructor(message: string, public code = '', public city = '') {
+    super(message)
+    this.name = 'StreamError'
+  }
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { ...init, headers: { ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...init?.headers } })
   if (!response.ok) {
@@ -32,7 +39,7 @@ export async function stream(path: string, body: unknown, signal: AbortSignal,
         const data = block.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n')
         if (kind && data) {
           const parsed = JSON.parse(data)
-          if (kind === 'error') throw new Error(parsed.message || '生成失败')
+          if (kind === 'error') throw new StreamError(parsed.message || '生成失败', parsed.code, parsed.city)
           if (kind === 'result') receivedResult = true
           onEvent(kind, parsed)
         }

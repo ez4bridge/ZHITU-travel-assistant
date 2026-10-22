@@ -64,7 +64,7 @@ async def test_provider_multiple_paths_selects_fastest_with_valid_geometry():
         await amap.close()
 
 
-def test_manual_selection_is_saved_without_version_and_preserved_on_auto_refresh(monkeypatch, tmp_path):
+def test_manual_selection_is_saved_without_version_and_preserved_on_auto_refresh(monkeypatch, tmp_path, offline_domestic_scope):
     import backend.main as main
     store = Store(tmp_path / 'plans.sqlite3')
     monkeypatch.setattr(main, 'store', store)

@@ -200,7 +200,7 @@ async def test_enrichment_never_uses_walking_between_cities():
 
 
 @pytest.mark.asyncio
-async def test_multicity_generate_revise_and_history_keep_independent_costs(monkeypatch, tmp_path):
+async def test_multicity_generate_revise_and_history_keep_independent_costs(monkeypatch, tmp_path, offline_domestic_scope):
     import httpx
     import backend.main as main
     from backend.validation import Validator

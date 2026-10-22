@@ -437,7 +437,7 @@ def test_old_context_keeps_legacy_fields():
     assert context.retrieval_mode == 'legacy_structured' and context.facts[0].id == 'H001'
 
 
-def test_api_qa_independent_and_no_global_place_catalog(monkeypatch, kb, tmp_path):
+def test_api_qa_independent_and_no_global_place_catalog(monkeypatch, kb, tmp_path, offline_domestic_scope):
     import backend.main as main
     from backend.storage import Store
     monkeypatch.setattr(main, 'knowledge', kb)

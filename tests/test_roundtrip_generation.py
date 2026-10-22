@@ -97,7 +97,7 @@ async def test_origin_boarding_is_not_assigned_to_destination_city(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_roundtrip_request_and_whole_party_fares_survive_sse_and_history(monkeypatch, tmp_path):
+async def test_roundtrip_request_and_whole_party_fares_survive_sse_and_history(monkeypatch, tmp_path, offline_domestic_scope):
     import httpx
     import backend.main as main
     from backend.amap import Amap

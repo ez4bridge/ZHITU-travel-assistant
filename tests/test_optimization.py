@@ -253,7 +253,7 @@ def test_route_selection_reprices_party_and_preserves_history(monkeypatch,tmp_pa
         assert store.get('original') is None
 
 
-def test_refresh_does_not_call_model_and_preserves_old_version(monkeypatch,tmp_path):
+def test_refresh_does_not_call_model_and_preserves_old_version(monkeypatch,tmp_path, offline_domestic_scope):
     import backend.main as main
     store=Store(tmp_path/'plans.sqlite3')
     monkeypatch.setattr(main,'store',store)
@@ -295,7 +295,7 @@ def test_guide_source_only_accepts_web_links_and_has_size_limits():
     assert 'opening_hours' in {i['code'] for i in result['unknowns']}
 
 
-def test_local_revision_keeps_other_days_and_routes(monkeypatch,tmp_path):
+def test_local_revision_keeps_other_days_and_routes(monkeypatch,tmp_path, offline_domestic_scope):
     import backend.main as main
     from datetime import timedelta
     store=Store(tmp_path/'plans.sqlite3')
@@ -331,7 +331,7 @@ def test_local_revision_keeps_other_days_and_routes(monkeypatch,tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_capacity_limit_does_not_start_third_task(monkeypatch):
+async def test_capacity_limit_does_not_start_third_task(monkeypatch, offline_domestic_scope):
     import backend.main as main
     monkeypatch.setattr(main,'_active_tasks',2)
     generate=AsyncMock()
@@ -344,7 +344,7 @@ async def test_capacity_limit_does_not_start_third_task(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_quota_error_does_not_save_generated_plan(monkeypatch,tmp_path):
+async def test_quota_error_does_not_save_generated_plan(monkeypatch,tmp_path, offline_domestic_scope):
     import backend.main as main
     store=Store(tmp_path/'plans.sqlite3')
     monkeypatch.setattr(main,'store',store)

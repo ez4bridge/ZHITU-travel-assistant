@@ -102,7 +102,7 @@ async def test_web_guide_search_uses_selected_stop_city(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_route_updates_preserve_weather_and_study_is_not_refreshed(monkeypatch, tmp_path):
+async def test_route_updates_preserve_weather_and_study_is_not_refreshed(monkeypatch, tmp_path, offline_domestic_scope):
     import backend.main as main
     from backend.models import RouteOption
     from backend.validation import Validator

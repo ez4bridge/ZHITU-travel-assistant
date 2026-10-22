@@ -143,7 +143,7 @@ def test_expense_categories_use_same_decimal_rounding_as_total():
     assert sum(plan.expense_totals.values()) == report.total_cents == 3606
 
 
-def test_api_missing_keys_and_public_map_config_never_exposes_secrets(monkeypatch):
+def test_api_missing_keys_and_public_map_config_never_exposes_secrets(monkeypatch, offline_domestic_scope):
     from backend.main import app
     monkeypatch.setattr(settings, 'llm_key', '')
     monkeypatch.setattr(settings, 'amap_sign_secret', 'private-sign-do-not-send')
@@ -165,7 +165,7 @@ def test_safe_errors_mask_all_credentials(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_two_requests_keep_separate_results(monkeypatch, tmp_path):
+async def test_two_requests_keep_separate_results(monkeypatch, tmp_path, offline_domestic_scope):
     import backend.main as main
     monkeypatch.setattr(main, 'store', Store(tmp_path / 'concurrent.sqlite3'))
     monkeypatch.setattr(main, 'validator', Validator())
@@ -189,7 +189,7 @@ async def test_two_requests_keep_separate_results(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_stream_disconnect_cancels_inflight_work(monkeypatch):
+async def test_stream_disconnect_cancels_inflight_work(monkeypatch, offline_domestic_scope):
     import backend.main as main
     started, cancelled = asyncio.Event(), asyncio.Event()
     async def slow_generate(*args, **kwargs):

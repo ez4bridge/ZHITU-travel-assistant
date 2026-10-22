@@ -26,6 +26,7 @@ from .budget import optimize_budget, budget_advice
 from .storage import Store
 from .validation import validator
 from .cities import city_catalog
+from .domestic_scope import DomesticScopeError, ensure_domestic_trip
 from .railway import Railway, sample_options
 from .planning import repair_schedule, recost_all
 from .feasibility import check_departure, schedule_journey, price_meals, require_feasible
@@ -398,12 +399,16 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
             started = monotonic()
             amap = Amap(trip.city_route, emit)
             rail = Railway(trip, emit, share_snapshots=True)
-            stage = 'refresh' if refresh else 'agent'
+            stage = 'domestic_scope'
             try:
                 async with asyncio.timeout(180):
+                    await emit('status', {'message': '正在核对国内出发地与目的地'})
+                    await ensure_domestic_trip(trip, amap)
+                    stage = 'refresh' if refresh else 'agent'
                     effective_trip, study_context = trip, None
                     if trip.study and previous:
                         effective_trip = await update_study_request(trip, instruction, study_patch, knowledge, previous)
+                        await ensure_domestic_trip(effective_trip, amap)
                     if refresh:
                         weather, weather_by_city = previous.weather, previous.weather_by_city
                     else:
@@ -548,7 +553,10 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                     'category': getattr(error, 'code', ''), 'elapsed_s': round(monotonic() - started, 2)}
                 logging.getLogger(__name__).warning('planning_failed type=%s category=%s provider_code=%s path=%s',
                     type(error).__name__, getattr(error, 'code', ''), getattr(error, 'provider_code', ''), getattr(error, 'path', ''))
-                await emit('error', {'message': settings.safe_error(error)})
+                detail = {'message': settings.safe_error(error)}
+                if isinstance(error, DomesticScopeError):
+                    detail.update(code=error.code, city=error.city)
+                await emit('error', detail)
             finally:
                 _active_tasks -= 1
                 _metrics['last_duration_s'] = round(monotonic() - started, 2)
