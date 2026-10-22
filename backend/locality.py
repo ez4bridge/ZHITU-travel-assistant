@@ -7,6 +7,52 @@ from .models import city_key
 from .administrative import cached_division, contains_place
 
 
+def _explicit_station(value):
+    value = value.strip()
+    if (len(value) < 3 or len(value) > 80
+            or re.fullmatch(r'(?:当地|目的地|本地|市内|市区)?(?:火车站|高铁站|车站|机场|航站楼)', value)
+            or re.search(r'[,，;；。！？/／或及→]|酒店|餐厅|用餐|休息|附近|一带|周边|抵达|到达|前往|乘坐|出发', value)):
+        return ''
+    return value if re.fullmatch(r'[^\s]+(?:站|机场|航站楼)', value) else ''
+
+
+def explicit_arrival_station(stop):
+    """A named station in a pure arrival label is a search candidate, not proof."""
+    if stop.kind != 'break' or stop.booking_anchor:
+        return ''
+    match = re.fullmatch(r'(?:抵达|到达)\s*(.+?)(?:后)?', stop.name.strip())
+    return _explicit_station(match.group(1) if match else stop.place_name or stop.name)
+
+
+def parse_arrival_movement(stop) -> dict | None:
+    """Parse only one explicit station followed by one explicit destination.
+
+    The description may mention luggage, but does not supply a booked hotel or
+    another routing endpoint. Meal/sight activities and verified points are not
+    reinterpreted. No coordinates or timetable facts are inferred.
+    """
+    if (stop.kind != 'break' or stop.booking_anchor or stop.location_status == 'verified'
+            or stop.location_behavior == 'same_as_previous'):
+        return None
+    match = re.fullmatch(
+        r'(?:抵达|到达)\s*(.+?)(?:后)?\s*[,，;；]\s*'
+        r'(?:(?:乘坐?|搭乘?)?\s*(?:地铁|公交|打车|出租车|网约车|步行)'
+        r'(?:\s*[0-9一二三四五六七八九十]+\s*号线)?\s*)?'
+        r'(?:前往|到|去)\s*([^,，;；。！？\n]{2,80})', stop.name.strip())
+    if not match or not (station := _explicit_station(match.group(1))):
+        return None
+    destination = match.group(2).strip()
+    # An itinerary may contain these legitimate activities, but they cannot be
+    # collapsed into an invented station-to-hotel/restaurant or multi-stop trip.
+    if (re.search(r'酒店|宾馆|旅馆|住宿|住所|住处|餐|吃|饭|寄存|行李|参观|游览|游玩|休息|购物|拍照|烟花|演出|然后|并|或者|及|/|／|→', destination)
+            or destination in ('市中心', '市区', '城区', '目的地', '附近', '酒店')):
+        return None
+    if stop.place_name and stop.place_name not in (stop.name, station, destination):
+        return None
+    return {'station': station, 'destination': destination,
+            'has_luggage_instruction': bool(re.search(r'寄存|行李', stop.description))}
+
+
 def separation(a, b):
     """Only a cheap candidate filter; never a route distance or duration."""
     x = math.radians(b[0] - a[0]) * math.cos(math.radians((a[1] + b[1]) / 2))
@@ -27,10 +73,13 @@ def _place_in_scope(amap, city, place):
 def meal_area_query(meal):
     """Extract an explicit dining area, never a made-up restaurant name."""
     text = (meal.area_name or meal.place_name or meal.name).strip()
-    text = re.sub(r'^(?:早餐|午餐|晚餐|用餐)[（(](.+)[）)]$', r'\1', text)
+    # “午餐（人民广场一带）” and “午餐：田子坊一带简餐” both only name an area.
+    text = re.sub(r'^(?:早餐|午餐|晚餐|用餐|夜宵|简餐)\s*[（(：:]\s*', '', text)
+    text = re.sub(r'[）)]\s*$', '', text)
     text = re.sub(r'^(?:返回|回到|前往|在|到)', '', text)
     # Meal activity titles often concatenate a real district with cuisine/time.
     text = re.split(r'附近|周边|一带|朝鲜族|东北菜|俄式|韩式|风味|地道|本地菜|早餐|午餐|晚餐|用餐|就餐', text, maxsplit=1)[0]
+    text = re.sub(r'(?:简餐|正餐|套餐|小吃|快餐)\s*$', '', text).strip()
     text = re.sub(r'市区$', '市', text)
     if text in ('', '市', '市区', '城区', '附近', '当地', '园区内', '景区内', '自由选择', '自行选择'):
         return ''
@@ -59,6 +108,18 @@ async def resolve_unlocated_meals(amap, day, protected_text=''):
     can become the meal endpoint. Specific ambiguous restaurant branches stay
     unresolved rather than being silently replaced.
     """
+    provider_codes = {'map_auth', 'map_ip_limit', 'map_network', 'map_rate_limit',
+                      'map_quota', 'map_response', 'map_permission'}
+
+    def remember_provider_codes(codes):
+        if not codes:
+            return
+        if not hasattr(amap, 'unresolved_provider_errors'):
+            amap.unresolved_provider_errors = []
+        for code in codes:
+            if code in provider_codes and code not in amap.unresolved_provider_errors:
+                amap.unresolved_provider_errors.append(code)
+
     for index, meal in enumerate(day.stops):
         if meal.kind != 'meal' or meal.location_status == 'verified':
             continue
@@ -81,11 +142,20 @@ async def resolve_unlocated_meals(amap, day, protected_text=''):
                     found = await amap.search(query, city) if len(amap.cities) > 1 else await amap.search(query)
                     exact = [p for p in found if p['name'] == query and '餐饮' not in p.get('type', '')]
                     scenic = [p for p in found if query in p['name'] and
-                              ('风景名胜' in p.get('type', '') or '特色商业街' in p.get('type', ''))]
+                              ('风景名胜' in p.get('type', '') or '特色商业街' in p.get('type', '')
+                               or '购物' in p.get('type', ''))]
                     civic = [p for p in found if p['name'] == query + '人民政府']
                     # A unique administrative POI is only a nearby-search anchor.
-                    candidates = (exact if len(exact) == 1 else scenic if len(scenic) == 1
-                                  else civic if len(civic) == 1 else [])
+                    if len(exact) == 1:
+                        candidates = exact
+                    elif scenic:
+                        # 田子坊／南京路 come back as several sub-areas; any of them
+                        # seeds the restaurant search, and the road check still runs.
+                        candidates = sorted(scenic, key=lambda p: (len(p['name']), p['name']))[:1]
+                    elif len(civic) == 1:
+                        candidates = civic
+                    else:
+                        candidates = []
                     if not candidates:
                         meal.location_note = '餐饮区域尚未明确定位，请补充具体餐厅或片区名称；未用附近其他城区替代'
                         continue
@@ -104,7 +174,7 @@ async def resolve_unlocated_meals(amap, day, protected_text=''):
             if not data.get('pois') and 'keywords' in params:
                 data = await amap.request('/v3/place/around', {k: v for k, v in params.items() if k != 'keywords'})
             used = {s.poi_id for s in day.stops if s.kind == 'meal' and s.location_status == 'verified'}
-            candidates = []
+            candidates, road_provider_errors = [], []
             for item in data.get('pois', [])[:3]:
                 if (not item.get('id') or not item.get('name') or item['id'] in used
                         or not (str(item.get('typecode', '')).startswith('05') or '餐饮' in str(item.get('type', '')))
@@ -123,11 +193,18 @@ async def resolve_unlocated_meals(amap, day, protected_text=''):
                 except RuntimeError as error:
                     if getattr(error, 'code', '') in ('map_auth', 'map_ip_limit'):
                         raise
+                    code = getattr(error, 'code', '')
+                    if code in provider_codes:
+                        road_provider_errors.append(code)
                     continue
                 if road.get('distance_m') is None or len(road.get('polyline', [])) < 2:
                     continue
                 candidates.append((road['distance_m'], item, candidate_point))
             if not candidates:
+                # Failed provider calls are not evidence that a restaurant is
+                # unreachable. If another candidate did resolve, preserve that
+                # normal fallback instead of blocking on the failed alternative.
+                remember_provider_codes(road_provider_errors)
                 meal.location_note = '餐饮片区已定位，但未取得道路可达的具体餐厅；请补充餐厅或稍后更新路线'
                 continue
             distance, item, point = min(candidates, key=lambda value: (value[0], value[1]['id']))
@@ -147,6 +224,7 @@ async def resolve_unlocated_meals(amap, day, protected_text=''):
         except (RuntimeError, ValueError) as error:
             if getattr(error, 'code', '') in ('map_auth', 'map_ip_limit'):
                 raise
+            remember_provider_codes([getattr(error, 'code', '')])
             meal.location_note = '具体餐厅核实未完成，保留餐饮需求；请补充明确地点或稍后更新路线'
 
 

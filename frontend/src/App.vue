@@ -6,7 +6,9 @@ import { Compass, ArrowUpRight, ArrowRight, MapPin, Users, Wallet, Footprints, C
 import DailyTransfer from './components/DailyTransfer.vue'
 import ConstraintReplan from './components/ConstraintReplan.vue'
 import BookingEditor from './components/BookingEditor.vue'
+import PreparationCard from './components/PreparationCard.vue'
 import HotelFields from './components/HotelFields.vue'
+import TransportFields from './components/TransportFields.vue'
 import { buildDayTimeline } from './dayTimeline'
 import { groupTravelTips } from './dayTips'
 import DestinationEditor from './components/DestinationEditor.vue'
@@ -55,6 +57,7 @@ const historyOpen = ref(false), busy = ref(false), progress = ref(''), error = r
 const constraintBusy = ref(false), bookingBusy = ref(false)
 const operationBusy = computed(() => busy.value || constraintBusy.value || bookingBusy.value)
 const adjustmentPanel = ref<InstanceType<typeof ConstraintReplan>>()
+const bookingPanel = ref<InstanceType<typeof BookingEditor>>()
 const intercityOptions: { value: IntercityMode; label: string }[] = [{ value: 'train', label: '铁路（高铁／火车）' }, { value: 'flight', label: '飞机' }, { value: 'driving', label: '自驾' }, { value: 'bus', label: '长途汽车' }]
 const travelTips = computed(() => plan.value ? groupTravelTips(plan.value) : { days: [], general: [] })
 const retainedPlanNotice = ref('')
@@ -121,6 +124,12 @@ async function retryWeather(city: string) {
   }
 }
 const report = computed(() => plan.value?.validation)
+const reminderCount = computed(() => {
+  const value = report.value
+  const findings = value ? value.errors.length + value.warnings.length + value.unknowns.length : 0
+  return findings + (plan.value?.adjustments?.length || 0) + (travelTips.value?.general.length || 0)
+})
+const hasReminders = computed(() => reminderCount.value > 0)
 const totalMinutes = computed(() => Math.ceil(dayRoutes.value.reduce((sum, r) => sum + (r.duration_s || 0), 0) / 60))
 const totalDistance = computed(() => (dayRoutes.value.reduce((sum, r) => sum + (r.distance_m || 0), 0) / 1000).toFixed(1))
 const hasMeasuredRoutes = computed(() => dayRoutes.value.some(route => route.scope !== 'intercity' && route.available && route.duration_s != null && route.distance_m != null))
@@ -177,6 +186,21 @@ function setDay(index: number) {
   activeDay.value = index
   selectedStopId.value = plan.value?.itinerary.days[index]?.stops[0]?.id || ''
 }
+function jumpToIssue(target: { day_index?: number | null; stop_id?: string | null; target?: string }) {
+  if (target.target === 'budget') {
+    document.querySelector('.budget-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    return
+  }
+  if (target.target === 'validation') {
+    document.querySelector('.validation-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    return
+  }
+  const index = target.day_index
+  if (typeof index !== 'number' || !plan.value?.itinerary.days[index]) return
+  setDay(index)
+  if (target.stop_id) selectedStopId.value = target.stop_id
+  nextTick(() => document.querySelector('.day-itinerary')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+}
 function selectStop(id: string) {
   selectedStopId.value = id
   if (mapCity.value) mapCity.value = day.value?.stops.find(stop => stop.id === id)?.city || ''
@@ -226,6 +250,17 @@ async function run(isRevision = false, refresh = false) {
     error.value = '各站游玩天数合计最多 10 天，请调整各城市时长。'; return
   }
   if (!studyMode.value && !refresh && hasIntercityTravel.value && !form.intercity_modes?.length) { error.value = '请至少选择一种可接受的跨城交通方式。'; return }
+  if (!studyMode.value && !refresh && !isRevision) {
+    const booked = form.booked_transports || []
+    const incomplete = booked.findIndex(item => !item.from_city.trim() || !item.to_city.trim()
+      || !item.departure_date || !item.departure_time || !item.arrival_date || !item.arrival_time)
+    if (incomplete >= 0) { error.value = `已确认交通 ${incomplete + 1} 需要补全出发／到达城市与时间。`; return }
+    const backwards = booked.findIndex(item =>
+      `${item.arrival_date}T${item.arrival_time}` <= `${item.departure_date}T${item.departure_time}`)
+    if (backwards >= 0) { error.value = `已确认交通 ${backwards + 1} 的到达时间需要晚于出发时间；跨夜请修改到达日期。`; return }
+    const costless = booked.findIndex(item => item.total_cost != null && (!Number.isFinite(item.total_cost) || item.total_cost < 0))
+    if (costless >= 0) { error.value = `已确认交通 ${costless + 1} 的全员总费用需要是非负金额，不清楚请留空。`; return }
+  }
   busy.value = true; error.value = ''; tools.value = []; retainedPlanNotice.value = ''; progress.value = '准备开始规划…'
   controller = new AbortController()
   const token = ++runSequence
@@ -257,8 +292,18 @@ async function run(isRevision = false, refresh = false) {
       progress.value = '本次规划已取消，已有方案仍然保留'
       if (plan.value) retainedPlanNotice.value = '本次规划已取消，下方仍是原有行程，交通选择和预算尚未更新。'
     } else {
-      error.value = e instanceof Error ? e.message : '规划失败，请重试'
-      if (plan.value) retainedPlanNotice.value = '本次未生成新行程，下方仍是原有版本，交通选择和预算尚未更新。'
+      const message = e instanceof Error ? e.message : '规划失败，请重试'
+      error.value = message
+      if (plan.value) {
+        if (message.includes('已确认约束或途中事实')) {
+          // The plan was already re-planned through constraints; the legacy
+          // refresh/revise path is intentionally closed. Point to the working
+          // entries instead of leaving a dead end.
+          retainedPlanNotice.value = '这份行程已经有确认过的酒店／交通／调整：要按新条件整份重排，请用「补充酒店与已订交通」里的“按新条件整份重新生成并保存”；要局部调整，请用「调整行程」。'
+        } else {
+          retainedPlanNotice.value = '本次未生成新行程，下方仍是原有版本，交通选择和预算尚未更新。'
+        }
+      }
     }
   } finally { if (token === runSequence) { busy.value = false; controller = null } }
 }
@@ -320,6 +365,7 @@ async function acceptConstraintPlan(updated: Plan) {
   form.booked_transports = JSON.parse(JSON.stringify(updated.request.booked_transports || []))
   setDay(Math.min(activeDay.value, updated.itinerary.days.length - 1))
   error.value = ''; revision.value = ''; tools.value = []; retainedPlanNotice.value = ''
+  retainedPlanNotice.value = `已应用调整，当前显示第 ${updated.revision} 版；旧版本仍保留在“我的行程”。`
   progress.value = '已打开确认后的行程版本；可继续通过“调整行程”修改偏好、活动或途中进度'
   try { await refreshHistory() }
   catch { error.value = '行程已打开，但历史列表未能刷新，请稍后重试。' }
@@ -382,6 +428,7 @@ async function acceptConstraintPlan(updated: Plan) {
               <div v-if="hasIntercityTravel" class="field"><span>可接受的跨城交通（可多选）</span><div class="intercity-preferences" role="group" aria-label="跨城交通偏好多选"><label v-for="option in intercityOptions" :key="option.value"><input v-model="form.intercity_modes" type="checkbox" :value="option.value" />{{ option.label }}</label></div><small class="form-note">逐段从所选方式中安排，可远程飞机、近程铁路。机票目前提供外部查询；估算不代表实际班次。</small></div>
               <p class="form-note">市内交通结合步行距离、通行时间与全员费用推荐；可比较步行、公交地铁和打车，再逐段预览确认。</p>
               <details class="hotel-input"><summary>已确认的酒店（可选，可填写多家）</summary><p class="subtle-note">尚未订好可以先生成；之后补录各城酒店和车票／机票，再核对接驳与时间。</p><HotelFields v-model="form.confirmed_hotels!" :cities="form.destinations.map(stay => stay.city).filter(Boolean)" :start-date="form.start_date" :days="Math.ceil(preferredDays)" compact :disabled="operationBusy || checking" /></details>
+              <details class="hotel-input"><summary>已确认的交通（可选，可填写多段）</summary><p class="subtle-note">已经买好的车票／机票作为固定事实参与规划：模型按你填的时刻与站点安排当天活动。没订好可以留空，生成后再补录。</p><TransportFields v-model="form.booked_transports!" :cities="[form.origin, ...form.destinations.map(stay => stay.city)].filter(Boolean)" :start-date="form.start_date" :disabled="operationBusy || checking" /></details>
               <label class="field preferences-field"><span>还有什么小期待？</span><textarea v-model="form.preferences" rows="3" maxlength="2000" placeholder="想看建筑、尝本地美食，或带孩子轻松逛逛…"></textarea></label>
               <GuideInput v-model="form.guides" v-model:mode="form.guide_mode" />
               <button class="primary-button generate-button" type="submit" :disabled="!health?.capabilities.planning"><LoaderCircle v-if="busy" :size="18" class="spin" /><Sparkles v-else :size="18" />{{ busy ? '正在规划旅程' : plan ? '重新规划一份行程' : '生成我的专属行程' }}<ArrowRight v-if="!busy" :size="17" /></button>
@@ -401,11 +448,7 @@ async function acceptConstraintPlan(updated: Plan) {
           <template v-if="plan && day">
             <p v-if="retainedPlanNotice" class="stay-budget-note card" role="status">{{ retainedPlanNotice }}</p>
             <div class="plan-heading card"><div><span class="eyebrow"><MapPin :size="13" /> {{ plan.request.destination }} · {{ plan.request.days }} 天 · {{ plan.request.people }} 人</span><h2>{{ plan.itinerary.title }}</h2><p>{{ plan.itinerary.summary }}</p></div><span class="revision-badge">版本 {{ plan.revision }}</span></div>
-            <BookingEditor v-if="!studyMode" :plan="plan" :disabled="busy || checking || constraintBusy" @busy="bookingBusy = $event" @applied="acceptConstraintPlan" />
-            <ConstraintReplan v-if="!studyMode" ref="adjustmentPanel" :plan="plan" :disabled="busy || checking || bookingBusy" @busy="constraintBusy = $event" @updated="acceptConstraintPlan" />
             <p v-if="studyMode" class="study-scope-note subtle-note">历史研学保留原文引用和资料问答；本场景请使用下方研学调整入口，普通旅行的仓颉约束与预订补录暂不用于研学。</p>
-            <div v-if="!studyMode && travelTips.general.length" class="travel-tips trip-reminders"><Leaf :size="17" /><div><strong>全程与待归属提醒</strong><p v-for="tip in travelTips.general" :key="tip">{{ tip }}</p></div></div>
-            <PlanRecovery :plan="plan" :busy="operationBusy" :checking="checking" @refresh="run(false, true)" @revise="reviseProblems" />
             <div class="day-tabs" role="tablist" aria-label="选择行程日期"><button v-for="(d, i) in plan.itinerary.days" :key="d.date" role="tab" :aria-selected="activeDay === i" :class="{ active: activeDay === i }" @click="setDay(i)"><span>DAY {{ String(i + 1).padStart(2, '0') }}</span><strong>{{ d.date.slice(5).replace('-', ' / ') }}</strong></button></div>
             <WeatherCard v-for="item in dayWeather" :key="item.city" :weather="item.weather" :city="item.city" :date="day.date" :retrying="weatherRetryCity === item.city" :retry-disabled="operationBusy || checking || Boolean(weatherRetryCity)" :refreshed="Boolean(weatherOverrides[item.city])" :retry-error="weatherRetryErrors[item.city]" @retry="retryWeather(item.city)" />
             <div class="journey-layout">
@@ -430,13 +473,25 @@ async function acceptConstraintPlan(updated: Plan) {
               <PlaceGuide :plan-id="plan.id" :stop="day.stops.find(stop => stop.id === selectedStopId)" :stops="day.stops" :date="day.date" :disabled="operationBusy || checking" :study-context="plan.study_context" @select="selectedStopId = $event" /></div>
             </div>
 
+            <section v-if="!studyMode" class="post-trip-tools">
+              <PreparationCard :plan="plan" :disabled="operationBusy || checking" @edit="bookingPanel?.open()" @jump="jumpToIssue" />
+              <ConstraintReplan ref="adjustmentPanel" :plan="plan" :disabled="busy || checking || bookingBusy" @busy="constraintBusy = $event" @updated="acceptConstraintPlan" @refresh="run(false, true)" />
+              <BookingEditor ref="bookingPanel" :plan="plan" hide-entry :disabled="busy || checking || constraintBusy" @busy="bookingBusy = $event" @applied="acceptConstraintPlan" />
+            </section>
+
+            <details class="reminder-center card" :open="hasReminders">
+              <summary><CircleAlert :size="16" /><strong>提醒与检查</strong><span>{{ reminderCount }} 项</span><small>同一提醒只在这里出现一次</small></summary>
+              <ValidationCard :key="plan.id" :report="plan.validation" :days="plan.itinerary.days" :busy="operationBusy" :checking="checking" @revalidate="validateAgain" @revise="reviseProblems" />
+              <PlanRecovery :plan="plan" :busy="operationBusy" :checking="checking" @refresh="run(false, true)" @revise="reviseProblems" />
+              <div v-if="!studyMode && travelTips.general.length" class="travel-tips trip-reminders"><Leaf :size="17" /><div><strong>全程与待归属提醒</strong><p v-for="tip in travelTips.general" :key="tip">{{ tip }}</p></div></div>
+              <div v-if="plan.adjustments?.length" class="travel-tips"><Clock3 :size="17" /><div><strong>时间调整记录</strong><p v-for="item in plan.adjustments" :key="item">{{ item }}</p></div></div>
+            </details>
+
             <div class="insights-grid">
               <div class="budget-card card"><div class="mini-heading"><Wallet :size="18" /><h3>旅行预算</h3><span>全员 · 全程估算</span></div><div class="budget-amount"><strong>¥{{ money(report!.total_cents) }}</strong><span>/ ¥{{ money(report!.budget_cents) }}</span></div><div class="budget-bar"><span :style="{ width: budgetRatio + '%' }" :class="{ over: report!.total_cents > report!.budget_cents }"></span></div><div class="cost-list"><div v-for="cost in costs" :key="cost.category"><span>{{ cost.name }}</span><strong>¥{{ money(cost.value) }}</strong></div></div><p v-if="report!.total_cents > report!.budget_cents" class="budget-excess">当前方案超出预算 ¥{{ money(report!.total_cents - report!.budget_cents) }}，尚未满足预算要求。</p><p v-if="!studyMode && savedTransportCoverage && !savedTransportCoverage.complete" class="budget-excess">跨城交通尚有缺项，当前合计不代表完整旅费。</p><p v-if="!studyMode && plan.request.origin" class="subtle-note">本版本交通范围：{{ transportScopeText(plan.request) }}</p><BudgetDetails :itinerary="plan.itinerary" :people="plan.request.people" /><p class="subtle-note">未核实费用为估算；已订金额以用户填写的订单为准，系统未查验订单，不代表实时报价。</p></div>
-              <ValidationCard :key="plan.id" :report="plan.validation" :days="plan.itinerary.days" :busy="operationBusy" :checking="checking" @revalidate="validateAgain" @revise="reviseProblems" />
             </div>
-            <div class="plan-actions card"><button v-if="!studyMode" class="secondary-button" :disabled="operationBusy || checking" @click="run(false, true)">更新路线与顺路餐饮</button><button v-if="!studyMode && form.guides?.length" class="text-button" :disabled="operationBusy || checking" @click="followGuides">按攻略优先重新规划</button><small>普通旅行的活动与交通选择统一预览后保存新版本；更新地图资料沿用原入口，研学修改保持独立。</small><button class="text-button" :disabled="operationBusy || checking" @click="deleteHistory">删除当前历史版本</button></div>
+            <div class="plan-actions card"><button v-if="!studyMode && form.guides?.length" class="text-button" :disabled="operationBusy || checking" @click="followGuides">按攻略优先重新规划</button><small>活动与交通选择统一在「调整行程」里预览后保存新版本；只刷新路况与餐馆也在该面板内，研学修改保持独立。</small><button class="text-button" :disabled="operationBusy || checking" @click="deleteHistory">删除当前历史版本</button></div>
             <GuideEvidence v-if="!studyMode" :guides="plan.request.guides || []" :decisions="plan.itinerary.guide_decisions || []" :stops="plan.itinerary.days.flatMap(d => d.stops)" />
-            <div v-if="plan.adjustments?.length" class="travel-tips"><Clock3 :size="17" /><div><strong>时间调整记录</strong><p v-for="item in plan.adjustments" :key="item">{{ item }}</p></div></div>
             <div v-if="studyMode" class="revise-card card"><div class="mini-heading"><Sparkles :size="19" /><h3>{{ studyMode ? '调整这次研学安排' : '让它更像你的旅行' }}</h3><span>每次调整保留旧版本</span></div><p>{{ studyMode ? '改变可用时间、保留喜欢的地点，或调整讲解重点。问历史知识请使用上方资料问答。' : '想少走一点、换个景点，或让第二天更轻松？' }}</p><label v-if="!studyMode" class="field"><span>调整范围</span><select v-model="revisionScope" :disabled="busy"><option value="all">整个行程</option><option value="day">仅当前第 {{ activeDay + 1 }} 天</option></select></label><form class="revision-input" @submit.prevent="run(true)"><input v-model="revision" maxlength="2000" :disabled="busy" :placeholder="studyMode ? '例如：缩短到两小时，保留新渔阳里' : '例如：第二天少安排一个景点，多留些休息时间'" aria-label="行程修改要求" /><button type="submit" :disabled="busy || !revision.trim()" aria-label="提交行程修改"><Send :size="18" /></button></form></div>
             <div v-if="plan.itinerary.guide_insights?.length" class="travel-tips"><Landmark :size="17" /><div><strong>攻略参考摘要（经验信息，未经官方核实）</strong><article v-for="(insight, i) in plan.itinerary.guide_insights" :key="i"><p>{{ insight.text }}</p><a v-if="plan.request.guides?.[insight.source_index]?.url" :href="plan.request.guides[insight.source_index]!.url" target="_blank" rel="noopener noreferrer">{{ plan.request.guides[insight.source_index]!.title }}</a><small v-else>{{ plan.request.guides?.[insight.source_index]?.title }}</small></article></div></div>
             <div v-if="studyMode && plan.itinerary.tips.length" class="travel-tips"><Leaf :size="17" /><div><strong>一点旅行小提醒</strong><p v-for="tip in plan.itinerary.tips" :key="tip">{{ tip }}</p></div></div>
@@ -470,6 +525,20 @@ async function acceptConstraintPlan(updated: Plan) {
 .hotel-input { margin:16px 0; }
 .hotel-input summary { cursor:pointer; color:#335b4d; font-size:13px; font-weight:600; }
 .hotel-input .subtle-note { margin:10px 0; }
+.post-trip-tools { display:grid; gap:14px; margin:22px 0 4px; }
+.post-trip-tools :deep(.preparation-card) { margin:0; }
+.post-trip-tools :deep(.constraint-entry) { margin:0; }
+.post-trip-tools :deep(.booking-entry > button) { padding:13px 22px; font-size:14px; }
+.post-trip-tools :deep(.booking-entry > small) { font-size:12px; }
+.reminder-center { margin:20px 0; padding:0; overflow:hidden; }
+.reminder-center > summary { display:flex; align-items:center; gap:9px; padding:16px 18px; cursor:pointer; color:#315843; list-style:none; }
+.reminder-center > summary::-webkit-details-marker { display:none; }
+.reminder-center > summary strong { font-size:15px; }
+.reminder-center > summary span { padding:2px 8px; border-radius:6px; background:#f2ece0; color:#8a6c42; font-size:11px; }
+.reminder-center > summary small { margin-left:auto; color:#8c967f; font-size:11px; }
+.reminder-center[open] > summary { border-bottom:1px solid #e8eee2; }
+.reminder-center :deep(.validation-card) { box-shadow:none; border:0; border-radius:0; padding:16px 18px; margin:0; }
+.reminder-center :deep(.travel-tips) { margin:0; padding:14px 18px; border-top:1px solid #eef2e8; }
 .day-reminders p { margin:6px 0; }
 .study-scope-note { padding:0 4px; }
 .timeline-conflict { display:flex; align-items:flex-start; gap:8px; padding:12px 14px; margin:12px 0 8px; border:1px solid #e8c6aa; border-radius:10px; background:#fff7ed; color:#965c31; overflow-wrap:anywhere; }

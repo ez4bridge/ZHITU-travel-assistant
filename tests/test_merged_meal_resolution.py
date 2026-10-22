@@ -181,6 +181,45 @@ async def test_refresh_enrichment_also_resolves_generic_meals(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_same_name_place_indexed_as_shop_and_road_is_not_ambiguous():
+    service = Amap('上海')
+    service.search = AsyncMock(return_value=[
+        {'id': 'shop', 'name': '南京路步行街', 'location': [121.48, 31.24],
+         'address': '黄浦区', 'type': '购物服务;购物相关场所;购物相关场所'},
+        {'id': 'road', 'name': '南京路步行街', 'location': [121.47, 31.23],
+         'address': '黄浦区', 'type': '地名地址信息;交通地名;道路名'}])
+    stop = Stop(id='sight', name='南京路步行街', place_name='南京路步行街', city='上海',
+                kind='sight', start='10:00', end='11:00')
+    try:
+        await service.resolve(stop)
+        assert stop.location_status == 'verified' and stop.poi_id == 'shop'
+        assert stop.location == (121.48, 31.24)
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_area_split_into_sub_areas_still_seeds_a_real_restaurant():
+    service = Amap('延边朝鲜族自治州')
+    stop = meal('田子坊周边午餐')
+    service.search = AsyncMock(return_value=[
+        {'id': 'tzf', 'name': '上海田子坊', 'location': [121.46, 31.21], 'address': '',
+         'type': '购物服务;特色商业街;特色商业街'},
+        {'id': 'tzf-e', 'name': '田子坊东部旅游区', 'location': [121.47, 31.21], 'address': '',
+         'type': '风景名胜;风景名胜相关;旅游景点'},
+        {'id': 'tzf-m', 'name': '田子坊中部旅游区', 'location': [121.465, 31.21], 'address': '',
+         'type': '风景名胜;风景名胜相关;旅游景点'}])
+    service.request = AsyncMock(return_value={'pois': [restaurant()]})
+    service.route = AsyncMock(return_value={'distance_m': 500, 'polyline': [(121.46, 31.21), (128.101, 42.401)]})
+    try:
+        await resolve_unlocated_meals(service, day([anchor(), stop]))
+        assert service.request.call_args.args[1]['location'] == '121.46,31.21'
+        assert stop.poi_id == 'real-food' and stop.location_status == 'verified'
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
 async def test_booked_hotel_address_filters_real_branches_without_trusting_user_coordinates():
     service = Amap('延边朝鲜族自治州')
     service.search = AsyncMock(return_value=[

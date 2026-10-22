@@ -5,6 +5,7 @@ import time
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -22,13 +23,14 @@ from .models import TripRequest, PlanRecord, RevisionRequest, RouteSelection, St
 from .amap import Amap
 from .agent import generate_itinerary
 from .storage import Store
-from .validation import validator
+from .validation import minutes, validator
 from .cities import city_catalog
 from .railway import Railway
 from .planning import repair_schedule, recost_all
 from .locality import prepare_accommodation
 from .itinerary_evidence import bind_stop_expenses, audit_guides, normalize_ticket_quantities
-from .meals import align_meals
+from .meals import align_meals, meal_schedule_checks
+from .arrival_flow import prepare_arrival_flow
 from .build_info import source_fingerprint
 from .conversation import ConversationStore, ConversationError, context_for, encoded, turn_memory
 from .qa_usage import UsageCollector
@@ -42,7 +44,10 @@ from .constraint_bridge import constraint_planner
 from .constraint_routes import active_constraint_previews, install_constraint_routes
 from .booking_routes import install_booking_routes, active_booking_previews
 from .planning_conversation_routes import install_conversation_routes, active_conversations
-from .bookings import apply_booked_transports, repair_booking_schedule
+from .bookings import (apply_booked_transports, drop_last_optional_stop,
+                       drop_movement_to_anchors, drop_return_movement_stops,
+                       ease_conflicting_transfers, normalize_booking_start_time,
+                       repair_booking_schedule)
 from .transfer_timeline import prepare_transfer_anchors
 
 BUILD_ID = source_fingerprint()
@@ -177,6 +182,15 @@ async def get_plan(plan_id):
     if not plan:
         raise HTTPException(404, '没有找到这份行程；关联行程已删除的对话请新建会话')
     return plan
+
+
+@app.get('/api/plans/{plan_id}/preparation')
+async def preparation(plan_id: str):
+    plan = await get_plan(plan_id)
+    if plan.request.study:
+        raise HTTPException(422, '历史研学使用独立的资料与研学准备流程')
+    from .preparation import preparation_context
+    return preparation_context(plan)
 
 
 @app.post('/api/plans/{plan_id}/validate')
@@ -416,6 +430,9 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                 return
             _active_tasks += 1
             started = monotonic()
+            # Tickets typed on the first form may start earlier than the form's
+            # "first day from" clock; the plan must begin at the real time.
+            normalize_booking_start_time(trip)
             amap = Amap(trip.journey_cities, emit)
             rail = Railway(trip, emit)
             stage = 'refresh' if refresh else 'agent'
@@ -450,6 +467,11 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                                 generated_transfer.booking_status = 'unconfirmed'
                                 if generated_transfer.price_status == 'user_reported':
                                     generated_transfer.price_status = 'estimated'
+                        # A “返回酒店” stop repeats the route's travel time. A partial
+                        # day refresh keeps other days untouched, so only clean there
+                        # when the whole route is being recomputed.
+                        moved = (drop_return_movement_stops(itinerary)
+                                 if not refresh or day_index is None else [])
                         if previous and day_index is not None:
                             for index in range(len(itinerary.days)):
                                 if index != day_index:
@@ -459,9 +481,14 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                             await rail.enrich(itinerary)
                         if trip.booked_transports:
                             apply_booked_transports(itinerary, trip)
+                        # Model/queried legs yield to the day; user tickets never move.
+                        eased = ease_conflicting_transfers(itinerary, trip)
                         itinerary.guide_insights = [i for i in itinerary.guide_insights if i.source_index < len(trip.guides)]
-                        prepare_transfer_anchors(itinerary, trip)
+                        prepare_transfer_anchors(itinerary, trip, prefer_user_bookings=bool(trip.booked_transports))
                         prepare_accommodation(itinerary, trip, day_index)
+                        moved += drop_movement_to_anchors(itinerary)
+                        flow_notices = (prepare_arrival_flow(trip, itinerary, day_index, instruction)
+                                        if not refresh else [])
                         if previous and day_index is not None:
                             # These helpers rebuild anchors globally. Other days are
                             # outside this map query and must retain their verified
@@ -502,13 +529,51 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                                         stop.start, stop.end = baseline[stop.id]
                         if trip.booked_transports or trip.confirmed_hotels or any(s.booking_anchor.startswith('transport_') for d in itinerary.days for s in d.stops):
                             from types import SimpleNamespace
-                            conflicts, adjustments = repair_booking_schedule(SimpleNamespace(request=trip, itinerary=itinerary, routes=routes), only_days={day_index} if day_index is not None else None)
+                            shell = SimpleNamespace(request=trip, itinerary=itinerary, routes=routes)
+                            scope = {day_index} if day_index is not None else None
+                            conflicts, adjustments = repair_booking_schedule(shell, only_days=scope)
+                            trimmed = []
+                            for _ in range(8):
+                                if not conflicts:
+                                    break
+                                removed = []
+                                for message in conflicts:
+                                    found = re.match(r'第(\d+)天', message)
+                                    if not found:
+                                        continue
+                                    number = int(found.group(1)) - 1
+                                    if not 0 <= number < len(itinerary.days):
+                                        continue
+                                    dropped = drop_last_optional_stop(itinerary, number)
+                                    if dropped:
+                                        removed.append(dropped)
+                                if not removed:
+                                    break
+                                trimmed += removed
+                                conflicts, adjustments = repair_booking_schedule(shell, only_days=scope)
                             if conflicts:
                                 raise ValueError('加入车站／机场接驳后无法排出可执行日程：' + '；'.join(conflicts) + '。请减少活动或调整时间；未保存本次方案，已有版本保留。')
+                            if trimmed:
+                                adjustments += ['当天时间不足，已移除模型建议的活动：'
+                                                + '、'.join(dict.fromkeys(trimmed))
+                                                + '；可在“调整行程”里另选时间补回']
+                            # Fixed anchors also need the meal windows repaired.
+                            adjustments += align_meals(trip, itinerary, routes, day_index,
+                                f'{trip.preferences} {instruction}', respect_opening=True)
                             adjustments = cost_adjustments + adjustments
                         else:
                             adjustments = cost_adjustments + repair_schedule(itinerary, routes, trip.start_time, only_day=day_index)
-                            adjustments += align_meals(trip, itinerary, routes, day_index, f'{trip.preferences} {instruction}')
+                            adjustments += align_meals(trip, itinerary, routes, day_index, f'{trip.preferences} {instruction}', respect_opening=True)
+                        meal_conflicts, meal_notices = meal_schedule_checks(trip, itinerary, routes, day_index,
+                            f'{trip.preferences} {instruction}')
+                        if meal_conflicts:
+                            # A late or possibly closed meal is a quality warning, not a
+                            # reason to discard a whole generated plan; it stays visible.
+                            meal_notices += [f'用餐安排待调整：{item}' for item in meal_conflicts]
+                        adjustments += [f'已移除模型生成的「{name}」移动活动；'
+                                        '返程时间改由路线与酒店节点计算，不重复计时' for name in moved]
+                        adjustments += [f'跨城班次调整：{item}' for item in eased]
+                        adjustments += flow_notices + meal_notices
                         await emit('status', {'message': '正在校验时间、真实通行时长和全员预算'})
                         stage = 'validation'
                         report = await validator.validate(trip, itinerary, routes)
@@ -690,7 +755,8 @@ async def favicon():
 async def index():
     if not (dist / 'index.html').exists():
         raise HTTPException(503, '请先运行 setup.ps1 构建前端')
-    return FileResponse(dist / 'index.html')
+    # Rebuilds must reach the browser: a cached shell keeps calling the old bundle.
+    return FileResponse(dist / 'index.html', headers={'Cache-Control': 'no-cache, must-revalidate'})
 
 
 if __name__ == '__main__':

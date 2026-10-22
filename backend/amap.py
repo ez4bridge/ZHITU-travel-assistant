@@ -36,12 +36,43 @@ MODE_NOTES = {
 }
 
 
+MEAL_LABEL = re.compile(r'^(?:早餐|午餐|晚餐|用餐|夜宵|简餐)\s*[：:（(]\s*')
+
+
 def place_query(stop) -> str:
     if stop.place_name.strip():
         return stop.place_name.strip()
-    # Activity labels are not part of a restaurant's searchable name.
-    match = re.match(r'^(?:早餐|午餐|晚餐|用餐)[（(](.+)[）)]$', stop.name)
-    return match.group(1) if match else stop.name
+    # Activity labels are not part of a restaurant's searchable name:
+    # “午餐（某某一带）” and “午餐：田子坊一带简餐” both name the area only.
+    return re.sub(r'[）)]\s*$', '', MEAL_LABEL.sub('', stop.name)).strip()
+
+
+AUXILIARY_TYPES = ('停车场', '停车楼', '公交车站', '公共厕所', '充电站', '停车场入口', '停车场出口')
+VISITABLE_HINTS = ('风景名胜', '特色商业街', '购物', '餐饮', '科教文化', '体育休闲', '影剧院')
+
+
+def auxiliary_place(place) -> bool:
+    """Car parks, bus stops and gates belong to a place, they are not the place."""
+    type_name = str(place.get('type', ''))
+    name = str(place.get('name', ''))
+    return (any(tag in type_name for tag in AUXILIARY_TYPES)
+            or bool(re.search(r'停车场|停车楼|公交站|出入口|入口|出口', name)))
+
+
+def primary_place(candidates, query=''):
+    """One named place indexed under several categories is not an ambiguity.
+
+    “南京路步行街” comes back as both a shopping area and a road name; the
+    coordinates describe the same street, so prefer the visitable entry.
+    Different names stay unresolved here and keep their own rules.
+    """
+    usable = [place for place in candidates if not auxiliary_place(place)]
+    if len(usable) == 1:
+        return usable[0]
+    same = [place for place in usable if place['name'] == query] or usable
+    if len({place['name'] for place in same}) == 1:
+        return max(same, key=lambda place: sum(hint in str(place.get('type', '')) for hint in VISITABLE_HINTS))
+    return None
 
 
 def signed_params(params, key, secret=''):
@@ -70,9 +101,15 @@ class Amap:
         self.places = {}
         self.routes = {}
         self.fatal_error = None
+        # A failed POI query can otherwise surface only as a missing location.
+        # Booking recovery must not mistake provider outages for proof that a
+        # flexible attraction/restaurant should be deleted. This client lives
+        # for one request; route alternatives keep their existing fallbacks.
+        self.unresolved_provider_errors = []
         self._blocked_paths = {}
         self._route_locks = {}
         self._route_failures = {}
+        self._transit_anchors = {}
         self._slots = asyncio.Semaphore(3)
         self.client = httpx.AsyncClient(timeout=15, trust_env=False)
 
@@ -208,6 +245,18 @@ class Amap:
             stop.poi_id = ''
             stop.location_note = '城市缺失或不在本次目的地列表中，无法核验地点'
             return
+        if stop.location_behavior == 'unlocated':
+            from .locality import explicit_arrival_station, parse_arrival_movement
+            if parse_arrival_movement(stop):
+                stop.poi_id = ''
+                stop.location_note = '这是抵达站点与前往目的地的复合动作，须拆分并分别核实地点和接驳时间'
+                return
+            station = explicit_arrival_station(stop)
+            if station:
+                stop.place_name, stop.location_behavior = station, 'poi'
+                stop.area_name = stop.area_poi_id = ''
+                stop.description = ('明确站名仅作为地图查询候选；地点核实不代表班次、到达时刻或车票已经确认。'
+                                    + stop.description)[:1200]
         if stop.location_behavior in ('same_as_previous', 'unlocated'):
             stop.poi_id = ''
             stop.location_note = '原地休息，位置由前一活动继承' if stop.location_behavior == 'same_as_previous' else '尚未指定活动地点'
@@ -231,12 +280,21 @@ class Amap:
             return
         if stop.area_poi_id:
             stop.poi_id = stop.area_poi_id
+        station_candidate = ((stop.kind == 'break' or getattr(stop, 'booking_anchor', '').startswith('transport_'))
+                             and bool(re.search(r'(?:站|机场|航站楼)$', query)))
         candidates = [p for group in self.places.values() for p in group
                       if p['id'] == stop.poi_id and city_key(p.get('city', self.city if len(self.cities) == 1 else '')) == city_key(stop.city)] if stop.poi_id else []
         if not candidates:
             candidates = await self.search(query) if len(self.cities) == 1 else await self.search(query, stop.city)
-        candidates = [p for p in candidates if query in p['name'] or p['name'] in query
-                      or SequenceMatcher(None, query, p['name']).ratio() >= .75]
+        if station_candidate:
+            # Provider aliases drop words (“浦东机场” → “上海浦东国际机场”), so a
+            # strict ratio would discard the real facility.
+            stem = re.sub(r'(?:国际)?(?:机场|航站楼|火车站|高铁站|站)$', '', query)
+            candidates = [p for p in candidates if (stem and stem in p['name']) or p['name'] in query
+                          or query in p['name'] or SequenceMatcher(None, query, p['name']).ratio() >= .6]
+        else:
+            candidates = [p for p in candidates if query in p['name'] or p['name'] in query
+                          or SequenceMatcher(None, query, p['name']).ratio() >= .75]
         candidates = list({p['id']: p for p in candidates}.values())
         booking_address = getattr(stop, 'booking_address', '').strip()
         if booking_address and getattr(stop, 'booking_anchor', '') in ('hotel_departure', 'hotel_return'):
@@ -252,8 +310,18 @@ class Amap:
                 return
         if stop.kind == 'meal':
             candidates = [p for p in candidates if not p.get('type') or '餐饮' in p['type']]
+        if station_candidate:
+            transport = [p for p in candidates if any(tag in p.get('type', '')
+                         for tag in ('火车站', '飞机场', '机场', '长途汽车站'))]
+            auxiliary = re.compile(r'航站楼|进站口|出站口|停车场|停车楼|广场|地铁站|公交|磁浮|售票|候机|候车|入口|出口')
+            parents = [p for p in transport if not auxiliary.search(p['name'])]
+            pool = parents or transport
+            if transport and len({p['id'] for p in pool}) == 1:
+                # One airport/station plus its terminals, gates or car parks is a
+                # single facility, not an ambiguous branch choice.
+                candidates = pool
         exact = [p for p in candidates if p['name'] == query or p['id'] == stop.poi_id]
-        if len(exact) > 1 and getattr(stop, 'booking_anchor', '').startswith('transport_'):
+        if len(exact) > 1 and (getattr(stop, 'booking_anchor', '').startswith('transport_') or station_candidate):
             transport = [p for p in exact if '火车站' in p.get('type', '') or '飞机场' in p.get('type', '')]
             if len(transport) == 1:
                 exact = transport
@@ -261,6 +329,10 @@ class Amap:
             scenic = [p for p in exact if '风景名胜' in p.get('type', '')]
             if len(scenic) == 1:
                 exact = scenic
+        if len(exact) > 1:
+            chosen = primary_place(exact, query)
+            if chosen is not None:
+                exact = [chosen]
         if stop.kind == 'sight' and not exact and len(candidates) > 1:
             scenic = [p for p in candidates if '风景名胜' in p.get('type', '')]
             auxiliary = [p for p in candidates if any(category in p.get('type', '')
@@ -286,6 +358,9 @@ class Amap:
         stop.matched_name = place['name']
         stop.location_status = 'verified'
         stop.location_note = '高德城市内 POI；营业时间未验证'
+        if station_candidate and place['name'] != query:
+            stop.location_note = (f'按「{place["name"]}」定位；具体航站楼／出入口未核实，'
+                                  '接驳时间仍为规划估算，请按登机／检票信息确认')
 
     async def route_in_city(self, origin, destination, mode, city=''):
         if len(self.cities) == 1:
@@ -347,7 +422,12 @@ class Amap:
                 first_error = first_error or error
         if not results:
             raise first_error or MapServiceError('no_route', '未返回具备真实道路形状的可用方案')
-        result = min(results, key=lambda value: (value['duration_s'], value['distance_m']))
+        if mode == 'transit':
+            # The provider returns its own ranked plans; the first one is what a
+            # user sees at the top of the Amap transit list. Do not re-rank.
+            result = results[0]
+        else:
+            result = min(results, key=lambda value: (value['duration_s'], value['distance_m']))
         self.routes[cache_key] = result
         return result
 
@@ -389,7 +469,12 @@ class Amap:
                   'instructions': instructions, 'note': MODE_NOTES[mode], 'fare_yuan': None,
                   'provider_endpoint': endpoint, 'taxi_cost_yuan': None, 'tolls_yuan': None}
         from decimal import Decimal, InvalidOperation
-        for field, raw in (('taxi_cost_yuan', route.get('taxi_cost')), ('tolls_yuan', path.get('tolls'))):
+        # A transit response may carry its own taxi hint; only driving-derived
+        # modes may claim a taxi quote.
+        fields = [('tolls_yuan', path.get('tolls'))]
+        if mode in ('taxi', 'driving'):
+            fields.insert(0, ('taxi_cost_yuan', route.get('taxi_cost')))
+        for field, raw in fields:
             try:
                 value = Decimal(str(raw))
                 if value.is_finite() and 0 <= value <= 10000000:
@@ -406,7 +491,70 @@ class Amap:
                 pass  # A missing/invalid fare does not invalidate verified road geometry.
         return result
 
+    async def transit_anchor(self, stop, point):
+        """The metro station inside an airport/railway hub, for transit queries.
+
+        The provider treats an airport POI as a bus terminal: querying “浦东机场”
+        returns airport-bus plans (167 min), while the metro station ~1 km inside
+        gives the 101-minute 2号线 plan. Only the transit query is moved; the hub
+        stop keeps its own coordinates and the walk is added explicitly.
+        """
+        if not point:
+            return None
+        from .locality import separation
+        hub = (getattr(stop, 'booking_anchor', '').startswith('transport_')
+               or bool(re.search(r'(?:机场|航站楼|火车站|高铁站|站)$', stop.name or '')))
+        if not hub:
+            return None
+        key = (stop.id or stop.name, tuple(point))
+        if key in self._transit_anchors:
+            return self._transit_anchors[key]
+        found, data = None, {}
+        try:
+            data = await self.request('/v3/place/around', {'location': f'{point[0]},{point[1]}',
+                'types': '150500', 'radius': 1500, 'sortrule': 'distance', 'offset': 3, 'page': 1,
+                'extensions': 'base'})
+        except (RuntimeError, ValueError):
+            data = {}
+        for item in (data.get('pois') or [])[:3]:
+            raw = item.get('location', '')
+            if not raw or ',' not in str(raw):
+                continue
+            try:
+                candidate = tuple(map(float, str(raw).split(',')))
+            except ValueError:
+                continue
+            distance = separation(point, candidate)
+            if found is None or distance < found[1]:
+                found = (candidate, distance, item.get('name') or '地铁站')
+        result = None if found is None or found[1] > 1200 else {
+            'point': found[0], 'walk_m': found[1], 'name': found[2]}
+        self._transit_anchors[key] = result
+        return result
+
+    async def transit_points(self, previous, current):
+        """Transit endpoints plus an honest estimate of the walk inside a hub."""
+        points = [tuple(previous.location), tuple(current.location)]
+        extra_s = extra_m = 0
+        notes = []
+        for index, stop in enumerate((previous, current)):
+            snapped = await self.transit_anchor(stop, stop.location)
+            if not snapped:
+                continue
+            points[index] = snapped['point']
+            # The provider's walking route from a terminal POI can detour several
+            # kilometres; an indoor walk is better estimated from straight line.
+            meters = snapped['walk_m'] * 1.25
+            minutes = max(1, round(meters / 72))
+            extra_s += minutes * 60
+            extra_m += int(meters)
+            notes.append(f'{"起点" if index == 0 else "终点"}按「{snapped["name"]}」地铁站查询，'
+                         f'另按直线距离估算站内步行约{minutes}分钟')
+        return tuple(points), extra_s, extra_m, notes
+
     async def enrich(self, itinerary, mode, compare_modes=False, day_indices=None, optimize_meals=False, protected_text='', enrich_details=False, people=1):
+        from .transfer_timeline import split_arrival_movements
+        split_arrival_movements(itinerary, day_indices)
         routes = []
         for day_index, day in enumerate(itinerary.days):
             if day_indices is not None and day_index not in day_indices:
@@ -448,6 +596,11 @@ class Amap:
                     if isinstance(error, MapServiceError) and error.fatal:
                         raise
                     stop.location_note = str(error)
+                    if (isinstance(error, MapServiceError) and error.code in (
+                            'map_auth', 'map_ip_limit', 'map_network', 'map_rate_limit',
+                            'map_quota', 'map_response', 'map_permission')
+                            and not stop.location and error.code not in self.unresolved_provider_errors):
+                        self.unresolved_provider_errors.append(error.code)
                 if self.emit:
                     await self.emit('tool', {'name': '核对地点', 'arguments': {'city': stop.city, 'name': stop.name},
                                             'summary': stop.matched_name or stop.location_note})
@@ -479,11 +632,32 @@ class Amap:
                     continue
                 if previous.location and current.location:
                     try:
+                        async def query(candidate_mode):
+                            points = (previous.location, current.location)
+                            extra_s = extra_m = 0
+                            notes = []
+                            if candidate_mode == 'transit':
+                                points, extra_s, extra_m, notes = await self.transit_points(previous, current)
+                            result = await self.route_in_city(points[0], points[1], candidate_mode, current.city)
+                            if extra_s or extra_m:
+                                result = {**result, 'duration_s': result['duration_s'] + extra_s,
+                                          'distance_m': result['distance_m'] + extra_m,
+                                          'note': '；'.join(notes) + '；' + (result.get('note') or '')}
+                            if candidate_mode == 'walking' and (result.get('distance_m') or 0) > 12000:
+                                result = {**result, 'note': '全程约%.0f公里，步行不现实，仅供对比；%s'
+                                          % (result['distance_m'] / 1000, result.get('note') or '')}
+                            if candidate_mode == 'taxi' and result.get('distance_m'):
+                                result = {**result, 'note': '高德驾车路线 %.1f 公里、约 %d 分钟，'
+                                          '出租车费为高德估价；%s'
+                                          % (result['distance_m'] / 1000, round(result['duration_s'] / 60),
+                                             result.get('note') or '')}
+                            return result
+
                         if previous.poi_id == current.poi_id and previous.location == current.location:
                             leg = leg.model_copy(update={'available': True, 'stationary': True, 'duration_s': 0,
                                 'distance_m': 0, 'note': '同一已核实地点，无需地点间转移'})
                         else:
-                            result = await self.route_in_city(previous.location, current.location, selected_mode, current.city)
+                            result = await query(selected_mode)
                             leg = leg.model_copy(update={**result, 'available': True})
                     except RuntimeError as error:
                         if isinstance(error, MapServiceError) and error.fatal and (mode != 'auto' or error.code in ('map_auth', 'map_ip_limit')):
@@ -495,7 +669,7 @@ class Amap:
                         async def alternative(candidate_mode):
                             option = RouteOption(mode=candidate_mode, note=MODE_NOTES[candidate_mode])
                             try:
-                                result = await self.route_in_city(previous.location, current.location, candidate_mode, current.city)
+                                result = await query(candidate_mode)
                                 option = option.model_copy(update={**result, 'available': True})
                             except RuntimeError as error:
                                 if isinstance(error, MapServiceError) and error.fatal and error.code in ('map_auth', 'map_ip_limit'):

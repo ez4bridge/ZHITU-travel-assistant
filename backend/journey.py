@@ -1,12 +1,53 @@
 """Normalize nationwide journeys to integer minutes for both rule engines."""
 from datetime import datetime, time
+from decimal import Decimal
 import re
 
-from .models import Itinerary, TripRequest, city_key
+from .models import CityTransfer, Itinerary, TripRequest, city_key
 
 
 class TransferCoverageError(ValueError):
     pass
+
+
+def merge_booked_transfers(request: TripRequest, itinerary: Itinerary) -> None:
+    """Tickets the user already bought fill legs the model omitted or reordered.
+
+    A booked leg is a fact, not something to re-ask the model for; without this
+    one omitted leg aborted the whole generation with “跨城交通不完整”.
+    """
+    if not request.booked_transports:
+        return
+    cities = request.journey_cities
+    expected = [(city_key(a), city_key(b)) for a, b in zip(cities, cities[1:])]
+    remaining = list(itinerary.transfers)
+    merged = []
+    for pair in expected:
+        match = next((item for item in remaining
+                      if (city_key(item.from_city), city_key(item.to_city)) == pair), None)
+        if match is not None:
+            remaining.remove(match)
+            merged.append(match)
+            continue
+        booking = next((item for item in request.booked_transports
+                        if (city_key(item.from_city), city_key(item.to_city)) == pair), None)
+        if booking is None:
+            merged.append(None)
+            continue
+        merged.append(CityTransfer(
+            from_city=booking.from_city, to_city=booking.to_city, mode=booking.mode,
+            departure_date=booking.departure_date, departure_time=booking.departure_time,
+            arrival_date=booking.arrival_date, arrival_time=booking.arrival_time,
+            departure_station=booking.departure_place or '', arrival_station=booking.arrival_place or '',
+            train_code=booking.number or '',
+            unit_cost=booking.total_cost if booking.total_cost is not None else Decimal('0'),
+            basis='group', booking_status='user_confirmed',
+            source='用户填写的已订交通，未向承运方核验',
+            note='已订交通；' + ('金额为用户填写的全员总额，未查验订单。' if booking.total_cost is not None
+                                 else '未填写成交金额，此段费用未计入，请补录后核对。')))
+    if any(item is None for item in merged):
+        return  # leave the original list; coverage will report what is missing
+    itinerary.transfers = merged
 
 
 def ensure_transfer_coverage(request: TripRequest, itinerary: Itinerary) -> None:
@@ -15,7 +56,9 @@ def ensure_transfer_coverage(request: TripRequest, itinerary: Itinerary) -> None
     actual = [(city_key(t.from_city), city_key(t.to_city)) for t in itinerary.transfers]
     if actual != expected:
         route = ' → '.join(cities)
-        raise TransferCoverageError(f'跨城交通必须按顺序完整列出 {route}；保留已选择的出发与返程，逐段提供日期、时间和费用')
+        found = '、'.join(f'{a}→{b}' for a, b in actual) or '未列出'
+        raise TransferCoverageError(f'跨城交通必须按顺序完整列出 {route}；当前为 {found}。'
+                                    '保留已选择的出发与返程，逐段提供日期、时间和费用')
     for day in itinerary.days:
         for stop in day.stops:
             # Boarding belongs to the intercity leg; never force an origin station into the destination city.

@@ -41,7 +41,19 @@ def select_division(city: str, data: dict) -> dict:
         complete = int(data.get('count', len(rows))) <= len(rows)
     except (TypeError, ValueError):
         complete = False
-    if len(matches) != 1 or not complete:
+    if not complete:
+        raise AdministrativeMatchError('目的地区划无法唯一确认，请填写明确的行政区全称')
+    # A city name also matches its own same-named county (长沙市／长沙县). The
+    # destination list is city-level, so that county is not a real ambiguity —
+    # but a same-named district elsewhere (朝阳区 vs 朝阳市) still is.
+    city_rows = [row for row in matches.values() if row.get('level') in ('city', 'province')]
+    if len(city_rows) == 1:
+        city = city_rows[0]
+        width = 2 if city.get('level') == 'province' else 4
+        others = [row for row in matches.values() if row is not city]
+        if all(str(row['adcode'])[:width] == str(city['adcode'])[:width] for row in others):
+            return city
+    if len(matches) != 1:
         raise AdministrativeMatchError('目的地区划无法唯一确认，请填写明确的行政区全称')
     return next(iter(matches.values()))
 

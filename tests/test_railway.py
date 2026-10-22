@@ -49,6 +49,28 @@ def test_actual_stations_seat_count_and_rounded_reference_price():
     assert reference_price('-1') is None
 
 
+def test_matching_unverified_arrival_movement_does_not_reject_actual_train():
+    request, itinerary, *_ = fixture()
+    option = options()[0]
+    itinerary.days[0].stops = DayPlan.model_validate({'date': request.start_date, 'title': '到达', 'stops': [
+        {'id': 'arrival', 'name': '抵达天津站，地铁前往世纪钟一带', 'kind': 'break',
+         'city': '天津', 'start': '11:43', 'end': '12:15', 'location_behavior': 'unlocated'}]}).stops
+    railway = Railway(request)
+    assert railway.fits(option, itinerary)
+    original = itinerary.model_dump_json()
+    assert railway.fits(option, itinerary) and itinerary.model_dump_json() == original
+    for field, value in [('city', '上海'), ('name', '抵达天津南站，地铁前往世纪钟一带'),
+                         ('kind', 'sight'), ('location_status', 'verified')]:
+        candidate = itinerary.model_copy(deep=True)
+        setattr(candidate.days[0].stops[0], field, value)
+        assert not railway.fits(option, candidate)
+    duplicate = itinerary.model_copy(deep=True)
+    second = duplicate.days[0].stops[0].model_copy(deep=True)
+    second.id = 'ambiguous-arrival'
+    duplicate.days[0].stops.append(second)
+    assert not railway.fits(option, duplicate)
+
+
 def test_filter_city_codes_price_identity_and_malformed_seats():
     *_, ticket, price = fixture()
     assert not options({**ticket, 'from_station_code': 'SHH'})

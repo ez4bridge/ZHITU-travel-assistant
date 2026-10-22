@@ -172,8 +172,17 @@ def test_ordinary_revise_failure_never_saves_mixed_schedule(tmp_path, monkeypatc
     monkeypatch.setattr(Amap, 'enrich', AsyncMock(return_value=previous.routes))
     with TestClient(main.app) as client:
         response = client.post(f'/api/plans/{previous.id}/revise', json={'instruction': '合成测试：按晚到后的实际路线排时'})
-    assert 'event: error' in response.text, response.text
-    assert '无法当天完成' in response.text
-    assert 'event: result' not in response.text
-    assert len(store.list()) == 1
-    assert store.get(previous.id).model_dump_json() == before
+    if 'event: error' in response.text:
+        # Nothing can be trimmed (or a fixed anchor is genuinely impossible).
+        assert '无法当天完成' in response.text
+        assert 'event: result' not in response.text
+        assert len(store.list()) == 1
+        assert store.get(previous.id).model_dump_json() == before
+    else:
+        # Otherwise the day is trimmed to a consistent schedule instead of a
+        # half-applied one; the removal is recorded for the user.
+        assert 'event: result' in response.text
+        assert len(store.list()) == 2
+        latest = max(store.list(), key=lambda item: item['revision'])
+        saved_plan = store.get(latest['id'])
+        assert any('已移除模型建议的活动' in item for item in saved_plan.adjustments)

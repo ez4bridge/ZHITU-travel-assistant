@@ -7,3 +7,10 @@ def arrival_buffer(mode, explicit=None):
     # Flying retains a conservative exit/baggage allowance. User input wins,
     # including an explicit zero; none of these are official minimums.
     return explicit if explicit is not None else (60 if mode == 'flight' else 0)
+
+
+def departure_buffer(mode, explicit=None):
+    # How early the traveller reaches the station/airport before departure.
+    # User input wins, including an explicit zero; these are planning
+    # allowances, not carrier minimum check-in rules.
+    return explicit if explicit is not None else (90 if mode == 'flight' else 30)

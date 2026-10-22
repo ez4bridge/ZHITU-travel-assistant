@@ -102,7 +102,8 @@ class Railway:
         requested = datetime.combine(self.request.start_date, time.fromisoformat(self.request.start_time), CHINA_TIMEZONE)
         now = datetime.now(CHINA_TIMEZONE)
         now = now.replace(second=0, microsecond=0) + timedelta(minutes=bool(now.second or now.microsecond))
-        return max(requested, now) + timedelta(minutes=60)
+        from .transfer_buffers import departure_buffer
+        return max(requested, now) + timedelta(minutes=departure_buffer('train'))
 
     async def stations(self, city: str) -> list:
         key = city_key(city)
@@ -235,21 +236,40 @@ class Railway:
                     transfer.price_status = 'reference'
                 transfer.note = '时刻与席位为查询时快照；票价为公布参考价或估算，未预订，进出站接驳需确认'
                 if first_origin:
-                    transfer.query_note = ('首段按可出发时刻及默认60分钟进站预留筛选，不受模型初稿出发时间限制；'
+                    transfer.query_note = ('首段按可出发时刻及默认30分钟进站预留筛选，不受模型初稿出发时间限制；'
                         '在本次已查且不与活动冲突的候选中优先较早到达，再比较时长与参考价。'
                         '当天已过时刻不推荐；住所到车站接驳、实际进站要求与余票仍须确认。')
             except Exception as error:
                 transfer.query_note = '铁路查询未完成，交通仍为估算：' + settings.safe_error(error)[:160]
 
     def fits(self, option: dict, itinerary: Itinerary) -> bool:
+        from .locality import parse_arrival_movement
+
         start = datetime.fromisoformat(option['departure_date'] + 'T' + option['departure_time'])
         end = datetime.fromisoformat(option['arrival_date'] + 'T' + option['arrival_time'])
         trip_start = datetime.combine(self.request.start_date, time.fromisoformat(self.request.start_time))
         trip_end = datetime.combine(self.request.start_date + timedelta(days=self.request.days), time())
         if start < trip_start or end >= trip_end:
             return False
+        # A model's composite arrival/movement placeholder is not a visit with
+        # a fixed clock. Its station must match this actual provider row before
+        # we let the station/hotel/map pipeline rebuild the onward transfer.
+        # Real visits, verified POIs and ambiguous/multiple placeholders remain
+        # constraints; no general activity is silently dropped to fit a train.
+        movable = []
+        for day in itinerary.days:
+            if day.date != end.date():
+                continue
+            for stop in day.stops:
+                parsed = parse_arrival_movement(stop)
+                if (parsed and city_key(stop.city) == city_key(option['to_city'])
+                        and parsed['station'].removesuffix('站') == option['arrival_station'].removesuffix('站')):
+                    movable.append(stop.id)
+        movable_id = movable[0] if len(movable) == 1 else None
         for day in itinerary.days:
             for stop in day.stops:
+                if stop.id == movable_id:
+                    continue
                 before = datetime.combine(day.date, time.fromisoformat(stop.start))
                 after = datetime.combine(day.date, time.fromisoformat(stop.end))
                 if before < end + timedelta(minutes=45) and after > start - timedelta(minutes=45):

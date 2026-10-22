@@ -1,4 +1,5 @@
 import type { BookingApplyResponse, BookingContext, BookingPreview, BookingPreviewRequest } from './bookingTypes'
+import type { Plan } from './types'
 
 export class BookingApiError extends Error {
   readonly status: number
@@ -47,5 +48,8 @@ export async function getBookingContext(id: string, signal: AbortSignal): Promis
 }
 export const previewBookings = (id: string, body: BookingPreviewRequest, signal: AbortSignal) =>
   bookingRequest<BookingPreview>(`${planPath(id)}/booking-preview`, signal, body)
+export const regenerateBookings = (id: string, body: BookingPreviewRequest, signal: AbortSignal) =>
+  bookingRequest<Omit<BookingPreview, 'status'> & { status: 'ready' | 'conflict' | 'applied'; plan?: Plan }>(
+    `${planPath(id)}/booking-regenerate`, signal, body)
 export const applyBookings = (id: string, previewId: string, signal: AbortSignal) =>
   bookingRequest<BookingApplyResponse>(`${planPath(id)}/booking-apply`, signal, { preview_id: previewId })

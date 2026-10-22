@@ -7,6 +7,6 @@ export function routeChoiceAction(route: Pick<RouteLeg, 'scope' | 'stationary' |
   return {
     enabled: local && !disabled && !selected && (available || queryable),
     requiresQuery: !available,
-    label: available ? selected ? '已选' : '选用并预览' : '查询并预览',
+    label: available ? selected ? '已选' : '在调整中预览' : '查询并预览',
   }
 }

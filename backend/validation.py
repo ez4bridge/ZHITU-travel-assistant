@@ -9,7 +9,7 @@ from pathlib import Path
 from .config import ROOT, settings
 from .models import Issue, ValidationReport, cents, city_key, itinerary_expenses
 from .journey import normalized_journey, validate_journey
-from .transfer_buffers import arrival_buffer
+from .transfer_buffers import arrival_buffer, departure_buffer
 
 
 def minutes(time):
@@ -78,7 +78,7 @@ def normalized_input(request, itinerary, routes, study_context=None):
         if missing_nights:
             unknowns.append(issue('accommodation_unconfirmed', '部分日期住宿尚未确认，仅推荐片区；相应酒店接驳未核实'))
     for booking in request.booked_transports:
-        before = booking.departure_buffer_min if booking.departure_buffer_min is not None else (120 if booking.mode == 'flight' else 60)
+        before = departure_buffer(booking.mode, booking.departure_buffer_min)
         after = arrival_buffer(booking.mode, booking.arrival_buffer_min)
         for index, day in enumerate(itinerary.days):
             for stop in day.stops:

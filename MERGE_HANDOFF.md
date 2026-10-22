@@ -79,3 +79,58 @@ $env:PORT = '7868'
 本轮实际检查：`pytest`608 passed、2第三方warnings；前端build、8个检查脚本和8项node测试通过；仓颉源码／协议未改，完整pytest包含真实原生检查。新增11项原子排时／到站回归、普通无锚点失败不保存回归、6项铁路筛选回归与前端倒序／路线匹配回归。正式7868已重启并与磁盘源码一致；未重新调用大模型或铁路查询来伪造在线效果。
 
 浏览器在独立合成库验证了历史冲突警示、原顺序和390px无横向溢出；也只读查看正式旧行程，确认返程冲突显示。证据在`.runtime/schedule-fix/verification.json`、`conflict-desktop.png`、`conflict-mobile.png`，最终测试日志`.runtime/schedule-fix-pytest.txt`。正式库重启前备份为`.runtime/schedule-fix/plans-before-restart.sqlite3`；7869合成验收进程结束后停止。
+
+## 2026-10-22 晚 — 10-23 凌晨：补录与整份重新生成全链路
+
+> 本节按当前工作树与真实运行状态重写（此前该文档有一段因编码错误变成乱码，已从 Git 恢复正文后重述）。更早的合并阶段以上文为准。
+
+### 1. 已实现：补录与重新生成
+
+- **补录入口**（前端 `BookingEditor.vue`）：两段酒店＋多段已订交通，草稿写 `localStorage`（键含行程 id 与 `base_fingerprint`），刷新可恢复、保存后清除。「按酒店与交通重新排时」按钮已删除，只保留 **「按新条件整份重新生成并保存」**。
+- **整份重新生成**：`POST /api/plans/{id}/booking-regenerate`。后端先按补录流程生成候选并自愈，`status=ready` 时**直接 `storage.apply` 保存新版本**并返回 `{status:'applied', plan}`；冲突则原样返回且不保存（过期预览 409）。前端收到 `applied` 即关闭面板并切到新版本，不再要求二次确认。
+- **补录预览/应用接口**（`booking-preview` / `booking-apply`）仍保留，前端当前不再使用。
+- **调整行程**（`ConstraintReplan.vue`）：仍是「预览→应用」两段式；内置「只刷新路况与餐馆」；`state_revision > 0` 时禁用该刷新（仍走整份重生成）。
+- **固定事实**：用户填写的酒店与车次是事实，模型提示词（`agent.booking_facts_instruction`）禁止改写、禁止在活动里重复列车站、禁止声称已查验订单。模型漏写的已订段由 `journey.merge_booked_transfers` 用用户车票补齐后再做覆盖校验。
+- **到站预留**：统一为火车 30 分钟、飞机 90 分钟（`transfer_buffers.arrival_buffer` / `departure_buffer`），用户填写值优先。
+- **退房早于班次**：酒店早退房节点取「当天该城出发班次 − 进站预留 − 20 分钟」为上限，避免首个活动在下一城时把退房排到发车之后。
+- **非用户班次让路**：`bookings.ease_conflicting_transfers` 对没有用户车票的跨城段，若早于当天活动结束＋45 分钟＋进站预留，则顺延并降级为估算（清空车次与查询快照），注明「请重新查询实际车次」。
+- **当天排不下**：`bookings.drop_last_optional_stop` 裁掉当天最后一个非锚点活动（含费用），生成与补录都走；锚点、酒店、用户车次永不裁剪。
+- **移动活动结构判定**：`drop_return_movement_stops`（返回/前往酒店、退房并前往车站等）＋ `drop_movement_to_anchors`（名称含已存在的酒店/车站锚点名且含移动动词→视为移动移除），避免「未定位」与重复计时。
+- **停留天数口径**：缺口 ≥ 2 个半天（=1 整天）才让模型重排一次；提示词明确「不能在第 N 天早上就离开要求 N 天的城市；总天数不够须在 summary 说明」。重排后仍不足则接受并保留 `stay_preference` 告警。
+- **不可达建议**：补录校验后按冲突点名的**非锚点活动**移除、刷新路线、重排、重校验（每轮重算不累加）；用户填写的酒店/车站定位不到时只提示保留，不阻断保存。
+
+### 2. 地点与地图数据（`administrative.py` / `amap.py` / `locality.py`）
+
+- 行政区选择：城市名命中同省区县时取城市级（adcode 前 4 位判定从属），修复「长沙→长沙市」歧义。
+- 机场/车站解析：放宽别名（浦东机场→上海浦东国际机场），取机场/车站本体，航站楼/出入口/停车场视为附属；匹配名与输入不同时在说明里注明。
+- 同名多分类：取可游览主 POI（如南京路步行街）。
+- 餐饮片区：支持「午餐：田子坊一带简餐」写法；多子片区先取父级锚点再找真实餐馆，仍只认真实 POI 与道路。
+- 公交方案取高德返回的第一条；枢纽端吸附 1200 米内地铁站；站内步行按直线距离估算并注明；打车卡片注明「高德驾车路线 X 公里、约 Y 分钟，费用为高德估价」；超 12 公里步行标注不现实。
+
+### 3. 并行会话新增的恢复与账务（1:31–1:42 已部署）
+
+- `backend/booking_recovery.py`：按天定位**可变建议**。`missing_route` 报错点名固定终点（如杭州东站）时，移除**前一个可变建议**（如餐馆）并重查新邻接；两端都是固定事实时标记为未知、不编造路线；同名活动跨天不误删；锚点、完成/锁定、已付/已承诺、非唯一 id 均受保护。
+- `backend/booking_finance.py`：整份重生成替换全部活动时，按经济身份保留已付/已承诺账目，不假定退款。
+- `booking_routes` 恢复循环：每轮「重排→校验→找一个可变建议移除→重查」，轮数以剩余可变活动数为上限；地图服务故障（配额/鉴权/网络）不据此删行程。最终只保留**用户明确选择的路线冲突、锁定/完成/每日时段冲突、固定事实本身无解**；`fixed_unknown_errors` 把固定点未知路线转为「已保留、待核实」提示，不再阻断。
+- 新增测试：`test_booking_route_recovery.py`（14）、`test_safe_booking_removal.py`（12）、`test_booking_finance.py`（11）、`test_booking_recovery_api.py`（2）、`test_booking_map_failures.py` 等。
+
+### 4. 提醒与页面
+
+- `backend/preparation.py` 的 `build_issues`：一条一个安排、**不合并**，带 severity/分组/day_index/stop_id/跳转目标；同一句只留一次；通用免责声明不再重复。
+- 页面顺序：标题 → 日期 → 天气 → 每日行程＋地图 → 出行准备（可折叠）→ 调整行程 → 补录入口 → 提醒与检查（折叠）→ 预算 → 操作。`ValidationCard` 是唯一完整清单，`PreparationCard` 只留一句入口。
+- `PlaceGuide.vue`：出行参考只列真景点（排除机场/车站），空状态按选中对象给提示。
+- 金额：`transport_cost.money` 与 `preparation` 的金额计算改用 `Decimal(str(value))`，修复 `'int' object has no attribute 'quantize'`。
+
+### 5. 当前验证状态（真实）
+
+- 后端完整 `pytest`：**772 passed / 0 failed / 0 skipped**（含真实仓颉校验器；其中 3 条对应用户「长沙-上海-杭州-返程」场景的恢复用例单独跑过）。
+- 7868 运行指纹 `faef0e850cb5a35d` 与磁盘一致，`validator=cangjie`，`tasks.active=0`。
+- 前端：`npm run build` 通过，产物 `index-D2nU4Y8X.js`；上一轮记录 10 个 `check-*.mjs`、12 项 `node --test` 通过。
+- 高德：逐项自检 `place/text`、`place/around`、`direction/walking|driving|transit` 均正常；`10044` 属账号/服务日配额或余额，换 Key 不重置。
+
+### 6. 未验证 / 已知限制
+
+- **未在真实浏览器**完整点一遍「补录 → 整份重新生成 → 自动保存」；**未用真实模型**重放该杭州行程（模型每次输出不同）。
+- 恢复是启发式：只删「可变建议」；固定事实之间确实无路线时保存为未知（页面标「接驳时间未核实」），不保证可执行。
+- 同一工作树不要两个会话同时写：本轮曾因并发写导致本文件一段中文变成乱码。
+- 工作树全部改动**未提交**；提交/推送需用户明确授权。

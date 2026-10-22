@@ -1,6 +1,6 @@
-"""Offline user-booking boundaries; synthetic roads are never live-map proof."""
+﻿"""Offline user-booking boundaries; synthetic roads are never live-map proof."""
 import asyncio
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -19,7 +19,7 @@ from test_constraint_city_scope import mixed_plan
 
 
 class SyntheticBookingMap:
-    """Resolve only new booking points and return explicit offline road shapes."""
+    """Resolve booking points and explicit prepared meal needs, using offline fixtures only."""
     instances = []
     available = True
     locate = True
@@ -33,10 +33,20 @@ class SyntheticBookingMap:
         for index in day_indices:
             day = itinerary.days[index]
             for number, stop in enumerate(day.stops):
-                if stop.booking_anchor and self.locate:
+                prepared_meal = stop.kind == 'meal' and stop.id.startswith(('meal-need-', 'late-meal-'))
+                if (stop.booking_anchor or prepared_meal) and self.locate:
                     stop.location = (116.3 + number * .001, 39.9)
                     stop.location_status = 'verified'
                     stop.poi_id = stop.id
+                    if prepared_meal:
+                        stop.name = f'合成离线餐馆（{stop.meal_period}）'
+                        stop.place_name = stop.matched_name = stop.name
+                        stop.location_behavior = 'poi'
+                        stop.location_note = '合成离线餐饮POI，仅用于测试，不代表真实餐馆、位置或营业情况'
+                        if not any(expense.category == 'food' and expense.stop_id == stop.id for expense in day.expenses):
+                            day.expenses.append(Expense(label='合成离线餐费预留', category='food', unit_cost=Decimal('20'),
+                                basis='group', stop_id=stop.id, commitment='planned',
+                                note='合成离线费用，仅测试预算流转，不代表查询报价或已付款'))
             for before, after in zip(day.stops, day.stops[1:]):
                 same_city = before.city.rstrip('市') == after.city.rstrip('市')
                 available = self.available and same_city and before.location is not None and after.location is not None
@@ -134,6 +144,109 @@ def test_ticket_buffers_and_user_provenance_without_order_verification(tmp_path)
     assert child.itinerary.days[1] == plan.itinerary.days[1]
 
 
+def test_pre_existing_late_meal_does_not_block_a_booking_supplement(tmp_path):
+    """An already accepted late lunch must not make the supplement unstorable."""
+    plan = mixed_plan()
+    plan.itinerary.days[0].stops.insert(1, Stop(id='late-lunch', name='合成晚午餐', kind='meal',
+        city='天津', meal_period='lunch', start='16:00', end='16:40',
+        location=(116.02, 39.0), poi_id='poi-late', location_status='verified'))
+    store, plan, storage, state = setup_booking(tmp_path, plan)
+    result = asyncio.run(preview_bookings(plan, state, booking_body(plan, state, [hotel()]), storage,
+        amap_factory=SyntheticBookingMap))
+    assert result['status'] == 'ready', result['conflicts']
+    assert any('沿用旧版本已存在的常见时段外安排' in notice for notice in result['notices'])
+
+
+def test_return_to_hotel_movement_is_not_counted_as_an_activity():
+    """Reported 2026-10-22: a 34-minute taxi plus a 40-minute “返回酒店” stop."""
+    from backend.bookings import drop_return_movement_stops
+
+    plan = sample_plan(2)
+    day = plan.itinerary.days[0]
+    day.stops = [
+        Stop(id='night-view', name='陆家嘴滨江夜景', city='北京', kind='sight',
+             start='19:10', end='20:10', location=(116.4, 39.9), location_status='verified'),
+        Stop(id='back', name='返回酒店', city='北京', kind='break', start='20:44', end='21:24',
+             place_name='柳营路518号', description='地铁返回酒店。'),
+        Stop(id='hotel', name='合成酒店甲', city='北京', kind='hotel', start='21:24', end='21:29',
+             booking_anchor='hotel_return', booking_ref='synthetic'),
+    ]
+    day.expenses = [Expense(label='返程占位费', category='other', unit_cost='5', stop_id='back')]
+    assert drop_return_movement_stops(plan.itinerary) == ['返回酒店']
+    assert [stop.id for stop in day.stops] == ['night-view', 'hotel']
+    assert not any(expense.stop_id == 'back' for expense in day.expenses)
+    assert drop_return_movement_stops(plan.itinerary) == []
+
+
+def test_return_movement_cleanup_keeps_meals_and_real_activities():
+    from backend.bookings import drop_return_movement_stops
+
+    plan = sample_plan(1)
+    day = plan.itinerary.days[0]
+    day.stops = [
+        Stop(id='meal', name='返回酒店附近晚餐', city='北京', kind='meal', start='18:00', end='19:00'),
+        Stop(id='sight', name='前往酒店观景台', city='北京', kind='sight', start='19:10', end='20:00'),
+    ]
+    assert drop_return_movement_stops(plan.itinerary) == []
+    assert [stop.id for stop in day.stops] == ['meal', 'sight']
+
+
+def test_preview_accepts_user_station_over_a_stale_model_arrival_label(tmp_path):
+    """Filling hotel+transport must re-plan instead of rejecting the old label.
+
+    Reported 2026-10-22: the preview text named 天津站, the user booked
+    合成天津南站, and the supplement aborted with “到达站不一致”. The applied
+    declaration now wins, with a visible note on the split destination.
+    """
+    plan = mixed_plan()
+    first = plan.itinerary.days[0]
+    first.stops[0] = Stop(id='arrival-label', city='天津', kind='break', start='13:00', end='14:00',
+        name='抵达天津站，地铁前往合成地点一带', location_behavior='unlocated',
+        description='出站后乘地铁前往合成地点方向，先到酒店寄存行李。')
+    store, plan, storage, state = setup_booking(tmp_path, plan)
+    booking = train().model_copy(update={'arrival_place': '合成天津南站'})
+    lodging = ConfirmedHotel(city='天津', name='合成酒店丙', check_in='2026-11-02', check_out='2026-11-03', total_cost='300')
+
+    class ArrivalPreviewMap:
+        """Synthetic roads for every prepared point, including the split area."""
+        def __init__(self, cities):
+            self.cities = cities
+
+        async def enrich(self, itinerary, mode, *, compare_modes, day_indices, optimize_meals, people):
+            routes = []
+            for index in day_indices:
+                day = itinerary.days[index]
+                for number, stop in enumerate(day.stops):
+                    if stop.location is None:
+                        stop.location = (116.3 + number * .001, 39.9)
+                        stop.location_status = 'verified'
+                        stop.poi_id = stop.id
+                for before, after in zip(day.stops, day.stops[1:]):
+                    same_city = before.city.rstrip('市') == after.city.rstrip('市')
+                    routes.append(RouteLeg(day_index=index, from_id=before.id, to_id=after.id, mode='walking',
+                        available=same_city, scope='local' if same_city else 'intercity',
+                        distance_m=500 if same_city else None, duration_s=600 if same_city else None,
+                        polyline=[before.location, after.location] if same_city else [],
+                        queried_at=datetime.now(timezone.utc), note='合成离线测试道路，不代表真实地图'))
+            return routes
+
+        async def close(self):
+            pass
+
+    result = asyncio.run(preview_bookings(plan, state, booking_body(plan, state, [lodging], [booking]),
+        storage, amap_factory=ArrivalPreviewMap))
+    assert result['status'] == 'ready', result['conflicts']
+    child = storage.apply(plan.id, result['preview_id'])
+    stops = child.itinerary.days[0].stops
+    arrivals = [s for s in stops if s.booking_anchor == 'transport_arrival']
+    assert [s.place_name for s in arrivals] == ['合成天津南站']
+    assert not any(s.place_name == '天津站' for s in stops)
+    destination = next(s for s in stops if s.id == 'arrival-label')
+    assert destination.name == '合成地点一带'
+    assert '按本次用户填写更新为「合成天津南站」' in destination.description
+    assert any(s.booking_anchor == 'hotel_departure' and s.place_name == '合成酒店丙' for s in stops)
+
+
 def test_bookings_cannot_move_confirmed_completed_activity(tmp_path):
     store, plan, storage, state = setup_booking(tmp_path)
     sid = plan.itinerary.days[1].stops[0].id
@@ -144,17 +257,55 @@ def test_bookings_cannot_move_confirmed_completed_activity(tmp_path):
     assert len(store.list()) == 1
 
 
+def test_booking_meal_preparation_cannot_add_breakfast_into_completed_past(tmp_path):
+    store, plan, storage, state = setup_booking(tmp_path)
+    completed = plan.itinerary.days[0].stops[0]
+    completed.start, completed.end = '10:00', '11:00'
+    state['activities'][completed.id] = {'status': 'completed', 'locked': True}
+    before = plan.model_dump_json()
+    class NoMapForPast:
+        def __init__(self, *_):
+            raise AssertionError('past additions must fail before any map request')
+    result = asyncio.run(preview_bookings(plan, state, booking_body(plan, state, [hotel()]), storage,
+        amap_factory=NoMapForPast))
+    assert result['status'] == 'conflict' and 'preview_id' not in result
+    assert any('过去行程不能自动补排' in error for error in result['conflicts'])
+    assert plan.model_dump_json() == before and len(store.list()) == 1
+
+
+def test_booking_future_days_still_work_after_an_activity_is_completed(tmp_path):
+    store, plan, storage, state = setup_booking(tmp_path)
+    completed = plan.itinerary.days[0].stops[-1]
+    state['activities'][completed.id] = {'status': 'completed', 'locked': True}
+    result = asyncio.run(preview_bookings(plan, state,
+        booking_body(plan, state, [hotel(start='2026-11-03')]), storage, amap_factory=SyntheticBookingMap))
+    assert result['status'] == 'ready', result['conflicts']
+    assert result['candidate']['itinerary']['days'][0] == plan.itinerary.days[0].model_dump(mode='json')
+
+
 @pytest.mark.parametrize('failure', ['unknown_place', 'missing_road'])
-def test_no_fake_success_when_booking_place_or_road_unknown(tmp_path, failure):
+def test_booking_place_or_road_unknown_is_surfaced_not_faked(tmp_path, failure):
+    """An unknown booked place/road is kept visible, never claimed executable."""
     class UnresolvedMap(SyntheticBookingMap):
         locate = failure != 'unknown_place'
         available = False
     store, plan, storage, state = setup_booking(tmp_path)
-    result = asyncio.run(preview_bookings(plan, state, booking_body(plan, state, [hotel()]), storage, amap_factory=UnresolvedMap))
-    assert result['status'] == 'conflict' and 'preview_id' not in result
-    assert result['conflicts']
-    assert len(store.list()) == 1
-
+    result = asyncio.run(preview_bookings(plan, state, booking_body(plan, state, [hotel()]),
+        storage, amap_factory=UnresolvedMap))
+    assert len(store.list()) == 1  # preview only, never a saved version
+    if result['status'] == 'conflict':
+        assert result['conflicts']
+        return
+    assert result['notices']
+    candidate = result['candidate']
+    stops = [stop for day in candidate['itinerary']['days'] for stop in day['stops']]
+    anchors = [stop for stop in stops if stop['booking_anchor']]
+    assert anchors
+    if failure == 'unknown_place':
+        assert all(stop['location_status'] != 'verified' for stop in anchors)
+    else:
+        assert all(route['available'] is False for route in candidate['routes'])
+    assert any('未唯一定位' in note or '路线' in note for note in result['notices'])
 
 def test_preview_stale_routing_revision_never_queries_or_writes(tmp_path):
     store, plan, storage, state = setup_booking(tmp_path)
@@ -277,11 +428,22 @@ def test_empty_arrival_day_connects_station_to_confirmed_hotel(tmp_path):
     assert result['status'] == 'ready', result['conflicts']
     child = storage.apply(plan.id, result['preview_id'])
     day = child.itinerary.days[0]
-    assert [s.booking_anchor for s in day.stops] == ['transport_departure', 'transport_arrival', 'hotel_return']
-    departure, arrival, destination = day.stops
+    assert [s.booking_anchor for s in day.stops] == ['transport_departure', 'transport_arrival', 'hotel_departure', '', 'hotel_return']
+    departure, arrival, destination, meal, returned = day.stops
     assert departure.city == '北京'
     assert arrival.start == '13:15' and destination.start >= '13:30'
+    assert '尚不表示已入住' in destination.description
+    assert meal.kind == 'meal' and meal.id.startswith('meal-need-')
+    assert meal.location_status == 'verified' and '合成离线' in meal.location_note
+    assert sum(s.kind == 'hotel' for s in day.stops) == 2  # Luggage drop, outside lunch, then the necessary return.
+    assert returned.name == destination.name
+    lodging_costs = [e for e in day.expenses if e.category == 'hotel']
+    assert len(lodging_costs) == 1 and lodging_costs[0].unit_cost == Decimal('300')
+    meal_costs = [e for e in day.expenses if e.category == 'food' and e.stop_id == meal.id]
+    assert len(meal_costs) == 1 and meal_costs[0].commitment == 'planned' and '合成离线' in meal_costs[0].note
     assert any(r.from_id == arrival.id and r.to_id == destination.id and r.available for r in child.routes)
+    assert any(r.from_id == destination.id and r.to_id == meal.id and r.available for r in child.routes)
+    assert any(r.from_id == meal.id and r.to_id == returned.id and r.available for r in child.routes)
 
 
 def test_early_booked_flight_derives_departure_start_in_confirmable_preview(tmp_path):
@@ -401,3 +563,62 @@ def test_booking_disconnection_cancels_work_and_releases_slot(tmp_path, monkeypa
     asyncio.run(run())
     assert cancelled == [True] and booking_routes.active_booking_previews() == 0
     assert len(store.list()) == 1
+
+def test_planned_leg_is_pushed_after_the_day_but_a_booked_ticket_never_moves():
+    """Reported 2026-10-22: a model-chosen 08:00 train aborted a fresh generation."""
+    from backend.bookings import ease_conflicting_transfers
+
+    plan = mixed_plan()
+    transfer = plan.itinerary.transfers[0]
+    transfer.schedule_status = 'queried'
+    transfer.train_code = 'SYN-0800'
+    transfer.departure_date = transfer.arrival_date = plan.itinerary.days[0].date
+    transfer.departure_time, transfer.arrival_time = '08:00', '09:00'
+    eased = ease_conflicting_transfers(plan.itinerary, plan.request)
+    assert eased and transfer.departure_time > '10:00'
+    assert transfer.schedule_status == 'estimated' and not transfer.train_code
+    assert '与当天活动冲突' in transfer.note
+
+    booked = mixed_plan()
+    trip = booked.request.model_copy(deep=True)
+    trip.booked_transports = [BookedTransport(from_city='北京', to_city='天津', mode='train',
+        departure_date=booked.itinerary.days[0].date, departure_time='08:00',
+        arrival_date=booked.itinerary.days[0].date, arrival_time='09:00', number='USER-0800')]
+    plan_transfer = booked.itinerary.transfers[0]
+    plan_transfer.departure_date = plan_transfer.arrival_date = booked.itinerary.days[0].date
+    plan_transfer.departure_time, plan_transfer.arrival_time = '08:00', '09:00'
+    assert ease_conflicting_transfers(booked.itinerary, trip) == []
+    assert plan_transfer.departure_time == '08:00'
+
+def test_overflowing_day_drops_only_its_last_model_activity():
+    """A day that cannot fit is trimmed instead of aborting the generation."""
+    from backend.bookings import drop_last_optional_stop
+
+    plan = sample_plan(1)
+    day = plan.itinerary.days[0]
+    day.stops = [Stop(id='s1', name='上午活动', city='北京', start='09:00', end='10:00'),
+                 Stop(id='s2', name='傍晚活动', city='北京', start='22:00', end='23:30'),
+                 Stop(id='hotel', name='合成酒店', city='北京', kind='hotel',
+                      start='23:30', end='23:35', booking_anchor='hotel_return', booking_ref='ref')]
+    day.expenses = [Expense(label='门票', category='ticket', unit_cost='10', stop_id='s2')]
+    # Trailing anchors do not protect a late activity: the day must fit.
+    assert drop_last_optional_stop(plan.itinerary, 0) == '傍晚活动'
+    assert [stop.id for stop in day.stops] == ['s1', 'hotel']
+    assert day.expenses == []
+    assert drop_last_optional_stop(plan.itinerary, 0) == '上午活动'
+    assert drop_last_optional_stop(plan.itinerary, 0) is None
+def test_hotel_checkout_is_placed_before_a_same_day_departure():
+    """Reported 2026-10-23: checkout used the next city's first activity time."""
+    from backend.bookings import apply_hotel_anchors
+
+    plan = mixed_plan()
+    trip = plan.request.model_copy(deep=True)
+    day = plan.itinerary.days[0]
+    trip.confirmed_hotels = [ConfirmedHotel(city='北京', name='合成酒店甲',
+        check_in=day.date - timedelta(days=1), check_out=day.date + timedelta(days=1), total_cost=None)]
+    transfer = plan.itinerary.transfers[0]
+    transfer.departure_time, transfer.arrival_time = '08:00', '09:00'
+    transfer.departure_date = transfer.arrival_date = day.date
+    apply_hotel_anchors(plan.itinerary, trip)
+    hotel = next(stop for stop in day.stops if stop.booking_anchor == 'hotel_departure')
+    assert hotel.start < '08:00'

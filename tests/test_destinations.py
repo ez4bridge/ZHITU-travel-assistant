@@ -128,6 +128,9 @@ def test_structured_request_flows_through_api_and_reports_preference(monkeypatch
     from backend.amap import Amap
     from backend.validation import Validator
     request, itinerary, _ = stay_case('1')
+    # This test isolates stay preference reporting. A 09:00 start assumes the
+    # traveller already ate breakfast, rather than shifting the sight into PM.
+    request.preferences = '早餐自理'
     async def generate(trip, amap, emit, previous=None, instruction='', rail=None, weather=None, weather_by_city=None):
         assert trip.city_route == ['北京']
         assert trip.destinations[0].preferred_days == Decimal('1')

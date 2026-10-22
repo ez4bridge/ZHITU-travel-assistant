@@ -8,7 +8,7 @@ import type { ActivityPriority, ActivityStatus, ConstraintActivity, ConstraintCh
 import type { Mode, Plan, RouteLeg } from '../types'
 
 const props = defineProps<{ plan: Plan; disabled?: boolean }>()
-const emit = defineEmits<{ updated: [plan: Plan]; busy: [value: boolean] }>()
+const emit = defineEmits<{ updated: [plan: Plan]; busy: [value: boolean]; refresh: [] }>()
 const opened = ref(false), working = ref(false), error = ref(''), stale = ref(false), feedback = ref('')
 const feedbackPlanId = ref('')
 const requestPhase = ref<'context' | 'intent' | 'preview' | 'apply'>('context')
@@ -26,7 +26,7 @@ const routeChoices = reactive<Record<string, Mode | ''>>({})
 const asOf = ref(''), currentStop = ref(''), progressConfirmed = ref(false)
 const drafts = reactive<Record<string, ConstraintActivity>>({})
 const extraMissed = reactive<Record<string, boolean>>({})
-const panel = ref<HTMLElement>(), previewPanel = ref<HTMLElement>(), chatLog = ref<HTMLElement>()
+const panel = ref<HTMLElement>(), previewPanel = ref<HTMLElement>(), chatLog = ref<HTMLElement>(), applyRow = ref<HTMLElement>()
 let controller: AbortController | null = null
 let operation = 0
 
@@ -154,6 +154,10 @@ async function openWithRoute(route: RouteLeg, chosenMode: Mode) {
     : `拟查询${modeLabels[chosenMode]}；点击计算预览后先查真实路线，失败会明确说明，不会直接采用或改写原行程。`
 }
 defineExpose({ openWithInstruction, openWithRoute })
+function startRouteRefresh() {
+  emit('refresh')
+  closeWorkspace()
+}
 function closeWorkspace() {
   if (working.value && requestPhase.value === 'apply') feedback.value = '已关闭保存请求；保存可能已完成，请重新打开工作区检查最新版本。'
   abortRequest(); opened.value = false; mode.value = null; context.value = null; preview.value = null
@@ -247,7 +251,9 @@ async function computePreview() {
     await nextTick()
     chatLog.value?.scrollTo({ top: chatLog.value.scrollHeight, behavior: 'smooth' })
     preview.value = result.preview
-    await nextTick(); previewPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    await nextTick()
+    // The apply button is the whole point of a preview; bring it into view.
+    ;(applyRow.value || previewPanel.value)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   } catch (reason) { if (token === operation) showError(reason) }
   finally { finishRequest(token) }
 }
@@ -342,6 +348,11 @@ onBeforeUnmount(abortRequest)
       <div class="panel-top"><div><span class="eyebrow">MAKE ROOM FOR CHANGE</span><h3 id="constraint-title">调整行程</h3></div><button class="icon-button" aria-label="关闭调整行程" @click="closeWorkspace"><X :size="20" /></button></div>
       <p v-if="feedback" class="saved-note" role="status"><Check :size="16" />{{ feedback }}</p>
       <p class="scope-note">选择一个城市，调整连续 1—3 天中的同城活动，每天最多 8 项、合计最多 24 项。跨城当天也可选，只调整该城市活动段，其他城市、已订交通和酒店保持。</p>
+      <div class="route-only">
+        <div><strong>只想更新路况与顺路餐馆？</strong><p>不改活动与顺序，原地重新查询高德路线与顺路餐馆，不产生新版本。</p></div>
+        <button type="button" class="secondary-button" :disabled="disabled || working || Boolean(context && context.state_revision > 0)" @click="startRouteRefresh">只刷新路况与餐馆</button>
+      </div>
+      <p v-if="context && context.state_revision > 0" class="route-only-note">这份行程已有确认过的约束或途中事实，自动刷新会绕过保护，已关闭；路线会在下面的调整预览里一并更新。</p>
       <p v-if="working" class="loading-note" role="status"><LoaderCircle :size="16" class="spin" />{{ requestPhase === 'apply' ? '正在保存新版本；关闭不会撤销已经完成的保存。' : requestPhase === 'intent' ? '正在把文字整理为可确认的具体变更…' : requestPhase === 'preview' ? '正在核对约束、路线和调整方案…' : '正在读取行程与已确认进度…' }}<button class="text-button" @click="closeWorkspace">{{ requestPhase === 'apply' ? '关闭工作区' : '取消并关闭' }}</button></p>
       <div v-if="error" class="problem-box" role="alert"><CircleAlert :size="18" /><div><strong>原方案仍然保留</strong><p>{{ error }}</p><button v-if="stale" class="text-button" :disabled="working" @click="openLatest">刷新当前行程</button><button v-else class="text-button" :disabled="working" @click="loadContext">重新读取约束与进度</button></div></div>
       <template v-if="context">
@@ -396,6 +407,7 @@ onBeforeUnmount(abortRequest)
         </form>
         <section v-if="preview" ref="previewPanel" class="preview-result" aria-labelledby="preview-title">
           <div class="preview-heading"><ShieldCheck :size="21" /><div><h4 id="preview-title">{{ outcomeTitle }}</h4><p>{{ Object.keys(preview.search).length ? `处理流程：仓颉 ${preview.engine.version} 搜索 → Python 独立复核 → 整趟校验；遇到阻断即停止，具体结果见下方。` : '输入与进度预检已发现问题，本次未进入仓颉搜索，原方案保留。' }}</p></div></div>
+          <p class="preview-unsaved"><CircleAlert :size="14" />这是预览，上面的行程还没有变化；确认无误后点下方「应用此方案」才保存为新版本。</p>
           <div class="preview-stats"><div><small>整趟费用</small><strong>¥{{ money(preview.summary.before_cents) }} <ArrowRight :size="14" /> ¥{{ money(preview.summary.after_cents) }}</strong><span>预算 ¥{{ money(preview.summary.budget_cents) }}</span></div><div><small>活动调整</small><strong>{{ preview.summary.changed_count }} 项</strong><span>其中跨天 {{ crossingCount }} 项 · 移除 {{ removalCount }} 项</span></div></div>
           <div v-if="preview.changes.length" class="changes-list"><article v-for="change in preview.changes" :key="change.stop_id"><strong>{{ change.name }}</strong><div><span>{{ changeTime(change, true) }}</span><ArrowRight :size="14" /><span>{{ changeTime(change, false) }}</span></div></article></div><p v-else class="hint">没有活动时间或日期变化；已确认事实仍须点击应用才保存。</p>
           <div v-if="preview.route_changes?.length" class="changes-list"><h5>市内交通变化（{{ preview.route_changes.length }} 段）</h5><article v-for="route in preview.route_changes" :key="routeKey(route)"><strong>第 {{ route.day_index + 1 }} 天 · {{ route.from_name }} → {{ route.to_name }}</strong><div><span>{{ modeLabels[route.before_mode] }} · {{ route.before_cost_cents === null ? '费用待核实' : `全员约 ¥${money(route.before_cost_cents)}` }}</span><ArrowRight :size="14" /><span>{{ modeLabels[route.after_mode] }} · {{ route.after_cost_cents === null ? '费用待核实' : `全员约 ¥${money(route.after_cost_cents)}` }}</span></div></article></div>
@@ -405,7 +417,7 @@ onBeforeUnmount(abortRequest)
           <details v-if="preview.unknowns.length" class="result-notes unknowns"><summary>{{ preview.unknowns.length }} 项待核实，展开查看</summary><ul><li v-for="(item, index) in preview.unknowns" :key="index">{{ item.message }}</li></ul></details>
           <p v-for="(notice, index) in preview.notices" :key="`preview-${index}`" class="hint">{{ notice }}</p>
           <details v-if="preview.checks.length" class="checks-detail"><summary>查看检查说明（{{ preview.checks.length }}）</summary><ul><li v-for="(item, index) in preview.checks" :key="index">{{ item.message }}</li></ul></details>
-          <div class="apply-row"><button v-if="canApply" class="primary-button" :disabled="working || disabled" @click="applyPreview"><LoaderCircle v-if="working" :size="17" class="spin" /><Check v-else :size="17" />应用此方案</button><p v-else class="hint">当前预览不可应用，请调整条件后重新计算。旧行程保留。</p><small v-if="canApply">将保存为新版本；途中模式只记录你已确认的进度，不会代办退改或购票。</small></div>
+          <div class="apply-row" ref="applyRow"><button v-if="canApply" class="primary-button" :disabled="working || disabled" @click="applyPreview"><LoaderCircle v-if="working" :size="17" class="spin" /><Check v-else :size="17" />应用此方案</button><p v-else class="hint">当前预览不可应用，请调整条件后重新计算。旧行程保留。</p><small v-if="canApply">预览尚未写入行程；点「应用此方案」才保存为新版本，旧版本保留。</small></div>
         </section>
         <p v-for="(notice, index) in context.notices" :key="`context-${index}`" class="context-note">{{ notice }}</p>
       </template>
@@ -416,11 +428,18 @@ onBeforeUnmount(abortRequest)
 <style scoped>
 .constraint-entry { margin: 0 0 20px; min-width: 0; }
 .entry-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; padding: 0 2px; }
+.entry-row > button { padding: 13px 22px; font-size: 14px; }
 .entry-row small, .scope-note, .hint, .preview-actions small, .apply-row small, .context-note { color: #79867e; font-size: 12px; line-height: 1.75; }
 .constraint-panel { padding: 24px; min-width: 0; }
 .panel-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .panel-top h3 { margin: 7px 0 0; font-size: 20px; color: #21473d; }
 .scope-note { margin: 14px 0 18px; }
+.route-only { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px 16px; margin:0 0 12px; padding:12px 14px; border:1px solid #e3ebdd; border-radius:10px; background:#f7faf3; }
+.route-only strong { font-size:13px; color:#426b51; }
+.route-only p { margin:4px 0 0; font-size:12px; color:#7c8b74; line-height:1.7; }
+.route-only button { padding:10px 16px; font-size:13px; white-space:nowrap; }
+.route-only-note { margin:0 0 14px; font-size:11px; color:#967a4e; line-height:1.7; }
+.preview-unsaved { display:flex; align-items:center; gap:6px; margin:10px 0 0; padding:9px 12px; border-radius:8px; background:#fdf6e7; color:#8a6c42; font-size:12px; line-height:1.7; }
 .loading-note, .saved-note { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13px; color: #3b7562; }
 .problem-box { display: flex; align-items: flex-start; gap: 10px; margin: 14px 0; padding: 14px; background: #fff5eb; border: 1px solid #ead6be; border-radius: 12px; color: #885e33; font-size: 13px; }
 .problem-box > svg { flex-shrink: 0; margin-top: 2px; }

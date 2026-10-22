@@ -43,7 +43,7 @@ def test_queried_unbooked_rail_places_both_origin_and_arrival_in_daily_plan():
     before = [e.model_dump() for e in itinerary_expenses(plan)]
     prepare_transfer_anchors(plan, request)
     departure, arrival, sight = plan.days[0].stops
-    assert (departure.name, departure.city, departure.start) == ('长沙南站', '长沙', '08:00')
+    assert (departure.name, departure.city, departure.start) == ('长沙南站', '长沙', '08:30')
     assert (arrival.name, arrival.city, arrival.start, arrival.end) == ('北京西站', '北京', '12:00', '12:05')
     assert '不额外统一增加30分钟' in arrival.description
     assert departure.booking_anchor == 'transport_departure' and arrival.booking_anchor == 'transport_arrival'
@@ -83,7 +83,7 @@ def test_wrong_city_unlocated_pure_departure_is_replaced_without_dropping_costs(
     prepare_transfer_anchors(plan, trip())
     assert not any(s.id == duplicate.id for day in plan.days for s in day.stops)
     departure = next(s for s in plan.days[0].stops if s.booking_anchor == 'transport_departure')
-    assert (departure.city, departure.name, departure.start) == ('长沙', '长沙南站', '08:00')
+    assert (departure.city, departure.name, departure.start) == ('长沙', '长沙南站', '08:30')
     assert [e.model_dump() for e in itinerary_expenses(plan)] == expense_before
     once = plan.model_dump_json()
     prepare_transfer_anchors(plan, trip())
@@ -135,7 +135,7 @@ def test_user_booked_airports_use_mode_buffers_and_explicit_provenance():
     apply_booked_transports(plan, request)
     prepare_transfer_anchors(plan, request)
     depart, arrive, _ = plan.days[0].stops
-    assert depart.name == '长沙黄花国际机场T2航站楼' and depart.start == '08:00'
+    assert depart.name == '长沙黄花国际机场T2航站楼' and depart.start == '08:30'
     assert arrive.name == '北京大兴国际机场' and arrive.start == '13:00'
     assert depart.booking_ref == arrive.booking_ref == 'transport-0'
     assert '用户填写' in depart.description and '尚未预订' not in depart.description
@@ -159,7 +159,7 @@ def test_overnight_ride_and_buffer_crossing_midnight_use_actual_calendar_day():
     plan.days[0].stops = []
     plan.days[1].stops = [Stop(id='next', name='次日景点', city='北京', start='06:00', end='07:00')]
     prepare_transfer_anchors(plan, trip())
-    assert plan.days[0].stops[0].start == '22:00'
+    assert plan.days[0].stops[0].start == '22:30'
     assert plan.days[1].stops[0].booking_anchor == 'transport_arrival'
     assert plan.days[1].stops[0].start == '06:00'
     plan = itinerary(transfer(mode='flight', departure_time='21:00', arrival_time='23:50'))

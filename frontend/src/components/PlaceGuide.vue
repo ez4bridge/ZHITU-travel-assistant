@@ -12,6 +12,9 @@ const error = ref(''), lastUsage = ref<QAUsage | null>(null)
 let request: AbortController | null = null, readRequest: AbortController | null = null, sequence = 0
 const guide = computed(() => props.stop ? saved.value[props.stop.id] : undefined)
 const supported = computed(() => props.stop?.kind === 'sight' && props.stop.poi_id && props.stop.location_status === 'verified')
+// A station/airport is a transport hub, not a sightseeing lookup target.
+const guideStops = computed(() => props.stops.filter(item => item.kind === 'sight' && !item.booking_anchor
+  && !/(?:机场|车站|火车站|高铁站|航站楼)$/.test((item.name || '').trim())))
 const policy = computed(() => props.stop?.study ? props.studyContext?.policies[props.stop.study.place_id] : undefined)
 const policySources = computed(() => props.studyContext?.sources.filter(source => policy.value?.source_ids.includes(source.id)) || [])
 const sections = [ { key: 'overview', label: '景点简介与推荐看点' }, { key: 'opening', label: '购票、预约与开放时间' }, { key: 'visit', label: '怎么参观' }, { key: 'tips', label: '实用提醒' } ]
@@ -63,10 +66,10 @@ onBeforeUnmount(() => { cancel(); readRequest?.abort() })
 <template>
   <section id="place-guide" class="place-guide card" tabindex="-1" aria-label="地点出行参考" :aria-busy="busy">
     <div class="guide-heading"><BookOpen :size="18" /><h3>出行参考</h3><span>按需联网</span></div>
-    <div class="guide-places" role="group" aria-label="选择查询攻略的地点"><button v-for="place in stops.filter(item => item.kind === 'sight')" :key="place.id" type="button" :aria-pressed="place.id === stop?.id" :disabled="disabled" @click="emit('select', place.id)">{{ place.name }}</button></div>
+    <div class="guide-places" role="group" aria-label="选择查询攻略的地点"><button v-for="place in guideStops" :key="place.id" type="button" :aria-pressed="place.id === stop?.id" :disabled="disabled" @click="emit('select', place.id)">{{ place.name }}</button></div>
     <p class="guide-place">{{ stop?.name || '请先选择一个地点' }}</p>
     <VisitAdvisory v-if="policy" :policy="policy" :sources="policySources" :stop="stop" :date="date" />
-    <p v-if="!supported" class="guide-note">请在上方选择已核实地点的景点，再查询简介、看点与出行信息。</p>
+    <p v-if="!supported" class="guide-note">{{ stop ? '当前选中的不是可查询的景点（可能是车站、机场或用餐）；请点上方景点名称。' : '请先在上方选择一个景点，再查询简介、看点与出行信息。' }}</p>
     <template v-else>
       <p class="guide-note">{{ date }} · {{ guide ? '已保存攻略，查看不会重新联网' : '选好地点后，点击查询简介、看点、购票与开放时间' }}</p>
       <div class="guide-actions">

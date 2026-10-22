@@ -53,14 +53,14 @@ async def test_first_origin_reconsiders_model_afternoon_and_prefers_earlier_arri
     selected = itinerary.transfers[0]
     assert selected.train_code == 'SYN-fast' and selected.departure_time == '10:30'
     assert selected.arrival_time == '13:30' and selected.schedule_status == 'queried'
-    assert railway.query.call_args.args == ('长沙', '上海', railway.request.start_date.isoformat(), '10:00')
+    assert railway.query.call_args.args == ('长沙', '上海', railway.request.start_date.isoformat(), '09:30')
     assert '不受模型初稿出发时间限制' in selected.query_note
 
 
 @pytest.mark.asyncio
 async def test_first_origin_keeps_station_buffer_and_uses_reference_price_only_as_tiebreak():
     railway, itinerary = setup()
-    cached(railway, [option(railway, 'too-early', '09:30', '11:30', '10'),
+    cached(railway, [option(railway, 'too-early', '09:15', '11:30', '10'),
                      option(railway, 'costly', '10:00', '14:00', '600'),
                      option(railway, 'cheaper', '10:00', '14:00', '400')])
     await railway.enrich(itinerary)
@@ -82,7 +82,7 @@ async def test_same_day_does_not_offer_departed_morning_train(monkeypatch):
     monkeypatch.setattr(module, 'datetime', FixedClock)
     cached(railway, [option(railway, 'morning', '10:00', '14:00'), option(railway, 'future', '16:18', '20:20')])
     await railway.enrich(itinerary)
-    assert railway.query.call_args.args[-1] == '15:25'
+    assert railway.query.call_args.args[-1] == '14:55'
     assert itinerary.transfers[0].train_code == 'SYN-future'
 
 
