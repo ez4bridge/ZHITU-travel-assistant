@@ -1,9 +1,15 @@
-"""Deterministic checks for schedules, routes, evidence and costs."""
+"""Deterministic validation; the normalized JSON contract can also run in Cangjie."""
+import asyncio
+import hashlib
+import json
 import math
 from datetime import timedelta
+from pathlib import Path
 
+from .config import ROOT, settings
 from .models import Issue, ValidationReport, cents, city_key, itinerary_expenses
 from .journey import normalized_journey, validate_journey
+from .transfer_buffers import arrival_buffer
 
 
 def minutes(time):
@@ -64,8 +70,25 @@ def normalized_input(request, itinerary, routes, study_context=None):
         if dining_note and not request.study:
             target = warnings if any(s.kind == 'meal' and not WINDOWS[period(s)][0] <= minutes(s.start) <= WINDOWS[period(s)][1] for s in day.stops) else unknowns
             target.append(issue('meal_arrangement', dining_note, index))
-    if request.days > 1 and (not request.confirmed_hotel or len(request.city_route) > 1):
-        unknowns.append(issue('accommodation_unconfirmed', '住宿仅推荐片区，尚未确认酒店；酒店接驳未纳入当前路线'))
+    if request.days > 1:
+        from .bookings import confirmed_hotels
+        hotels = confirmed_hotels(request)
+        missing_nights = [d for d in itinerary.days[:-1] if not any(
+            h.check_in <= d.date < h.check_out and (not d.stops or city_key(h.city) == city_key(d.stops[-1].city)) for h in hotels)]
+        if missing_nights:
+            unknowns.append(issue('accommodation_unconfirmed', '部分日期住宿尚未确认，仅推荐片区；相应酒店接驳未核实'))
+    for booking in request.booked_transports:
+        before = booking.departure_buffer_min if booking.departure_buffer_min is not None else (120 if booking.mode == 'flight' else 60)
+        after = arrival_buffer(booking.mode, booking.arrival_buffer_min)
+        for index, day in enumerate(itinerary.days):
+            for stop in day.stops:
+                if (day.date == booking.departure_date and city_key(stop.city) == city_key(booking.from_city)
+                        and stop.booking_anchor != 'transport_departure'
+                        and minutes(stop.end) > minutes(booking.departure_time) - before):
+                    errors.append(issue('booking_departure_buffer', '活动未留足用户已订交通的进站／安检时间', index, stop.id))
+                if (day.date == booking.arrival_date and city_key(stop.city) == city_key(booking.to_city)
+                        and minutes(stop.start) < minutes(booking.arrival_time) + after):
+                    errors.append(issue('booking_arrival_buffer', '活动早于已订交通到达加出站预留时间', index, stop.id))
     if request.guides and (not itinerary.guide_decisions or any(d.status == 'not_used' for d in itinerary.guide_decisions)):
         unknowns.append(issue('guide_adoption', '部分攻略未能落实到活动，请查看攻略采纳与调整说明'))
     unknowns.insert(0, issue('estimated_prices', '费用为参考估算；交通区分地图估价、公开费率和预算假设，非实时订单报价'))
@@ -139,10 +162,80 @@ def validate_core(data):
 
 
 class Validator:
-    diagnostic = 'Python规则校验'
+    def __init__(self, executable=None, fixtures=None, preferred=None):
+        self.executable = Path(executable or ROOT / 'cangjie' / 'bin' / 'validator.exe')
+        self.fixtures = Path(fixtures or ROOT / 'cangjie' / 'fixtures.json')
+        self.preferred = preferred or settings.validator
+        self._verified_hash = ''
+        self._failed_hash = ''
+        self._lock = asyncio.Lock()
+        self.diagnostic = '仓颉模块未启用，使用 Python 校验'
+
+    async def call_cangjie(self, data):
+        process = await asyncio.create_subprocess_exec(str(self.executable), stdin=asyncio.subprocess.PIPE,
+                                                      stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        try:
+            output, _ = await asyncio.wait_for(process.communicate(json.dumps(data, ensure_ascii=False).encode('utf-8')), timeout=3)
+        except BaseException as error:
+            if process.returncode is None:
+                process.kill()
+            await process.wait()
+            if isinstance(error, asyncio.TimeoutError):
+                raise RuntimeError('仓颉原生程序超过 3 秒运行上限') from None
+            raise
+        if process.returncode or len(output) > 1000000:
+            raise RuntimeError(f'仓颉模块退出异常或输出过大（退出码 {process.returncode}）')
+        result = json.loads(output)
+        report = ValidationReport.model_validate({**result, 'backend': 'cangjie'})
+        if report.total_cents != data['total_cents'] or report.budget_cents != data['budget_cents']:
+            raise RuntimeError('仓颉模块费用输出与输入不一致')
+        expected_status = 'issues' if report.errors or report.warnings else ('passed_with_unknowns' if report.unknowns else 'passed')
+        if report.status != expected_status:
+            raise RuntimeError('仓颉模块状态格式不一致')
+        return result
+
+    async def ready(self):
+        if self.preferred == 'python' or not self.executable.is_file():
+            return False
+        async with self._lock:
+            try:
+                fixture_bytes = self.fixtures.read_bytes()
+                digest = hashlib.sha256(self.executable.read_bytes() + b'\0' + fixture_bytes).hexdigest()
+            except OSError as error:
+                self.diagnostic = '仓颉文件不可访问，已回退 Python：' + settings.safe_error(error)
+                return False
+            if digest == self._verified_hash:
+                self.diagnostic = '仓颉编译程序已通过固定样例一致性检查'
+                return True
+            if digest == self._failed_hash:
+                return False
+            try:
+                cases = json.loads(fixture_bytes.decode('utf-8-sig'))
+                if not cases:
+                    raise RuntimeError('仓颉固定样例不能为空')
+                for case in cases:
+                    if await self.call_cangjie(case['input']) != validate_core(case['input']):
+                        raise RuntimeError('仓颉与 Python 固定样例结果不一致：' + case['name'])
+                self._verified_hash = digest
+                self.diagnostic = '仓颉编译程序已通过固定样例一致性检查'
+                return True
+            except Exception as error:
+                self._failed_hash = digest
+                self.diagnostic = '仓颉不可用，已回退 Python：' + settings.safe_error(error)
+                return False
 
     async def validate(self, request, itinerary, routes, study_context=None):
+        # Study evidence, policy and walking checks run in Python normalization;
+        # the optional native program checks the shared schedule and cost contract.
         data = normalized_input(request, itinerary, routes, study_context)
+        if await self.ready():
+            try:
+                result = await self.call_cangjie(data)
+                return ValidationReport(**result, backend='cangjie', diagnostic=self.diagnostic)
+            except Exception as error:
+                self._failed_hash = self._verified_hash
+                self._verified_hash = ''
+                self.diagnostic = '仓颉运行失败，已回退 Python：' + settings.safe_error(error)
         return ValidationReport(**validate_core(data), backend='python', diagnostic=self.diagnostic)
 
 

@@ -38,6 +38,12 @@ from .map_region import resolve_map_region
 from .place_guide import GuideService, GuideStore
 from .knowledge import KnowledgeBase
 from .study_agent import answer_study, generate_study_plan, plan_places, update_study_request
+from .constraint_bridge import constraint_planner
+from .constraint_routes import active_constraint_previews, install_constraint_routes
+from .booking_routes import install_booking_routes, active_booking_previews
+from .planning_conversation_routes import install_conversation_routes, active_conversations
+from .bookings import apply_booked_transports, repair_booking_schedule
+from .transfer_timeline import prepare_transfer_anchors
 
 BUILD_ID = source_fingerprint()
 STARTED_AT = datetime.now(timezone.utc).isoformat()
@@ -70,6 +76,17 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost
 _active_tasks = 0
 _metrics = {'completed': 0, 'failed': 0, 'cancelled': 0, 'last_duration_s': 0.0}
 _last_failure = None
+install_constraint_routes(app, lambda: store)
+install_booking_routes(app, lambda: store)
+install_conversation_routes(app, lambda: store)
+
+
+def protect_confirmed_constraints(plan):
+    from .constraint_storage import ConstraintStale, assert_legacy_editable
+    try:
+        assert_legacy_editable(store, plan)
+    except ConstraintStale as error:
+        raise HTTPException(409, str(error)) from None
 
 
 @app.middleware('http')
@@ -92,13 +109,19 @@ async def conversation_error(request, error):
 
 @app.get('/api/health')
 async def health():
+    ready = await validator.ready()
+    constraints_ready = await constraint_planner.ready()
     return {'app_id': 'travel-assistant', 'status': 'ok', 'model': settings.llm_model,
             'capabilities': {'planning': bool(settings.llm_key and settings.amap_key), 'map': bool(settings.amap_web_key and settings.amap_js_sec),
                              'railway': settings.rail_mcp_enabled and settings.rail_mcp_python.is_file(),
-                             'routing': bool(settings.amap_key), 'validator': 'python'},
+                             'routing': bool(settings.amap_key), 'validator': 'cangjie' if ready else 'python',
+                             'constraint_replanning': constraints_ready},
             'missing': [name for name, value in [('LLM_API_KEY', settings.llm_key), ('AMAP_API_KEY', settings.amap_key),
                        ('AMAP_WEB_KEY', settings.amap_web_key), ('AMAP_JS_SEC', settings.amap_js_sec)] if not value],
-            'validator_diagnostic': validator.diagnostic, 'tasks': {'active': _active_tasks, **_metrics},
+            'validator_diagnostic': validator.diagnostic, 'constraint_diagnostic': constraint_planner.diagnostic,
+            'tasks': {'active': _active_tasks + active_constraint_previews() + active_booking_previews() + active_conversations(),
+                      'constraint_active': active_constraint_previews(), 'booking_active': active_booking_previews(),
+                      'conversation_active': active_conversations(), **_metrics},
             'build_id': BUILD_ID, 'started_at': STARTED_AT,
             'rate_limit': {'qps_per_endpoint': settings.amap_qps, 'scope': 'server_process', 'max_retries': 2},
             'last_failure': _last_failure}
@@ -393,7 +416,7 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                 return
             _active_tasks += 1
             started = monotonic()
-            amap = Amap(trip.city_route, emit)
+            amap = Amap(trip.journey_cities, emit)
             rail = Railway(trip, emit)
             stage = 'refresh' if refresh else 'agent'
             try:
@@ -415,6 +438,18 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                         adjustments, baseline, same_activities = [], {}, False
                     else:
                         itinerary = previous.itinerary.model_copy(deep=True) if refresh else await generate_itinerary(trip, amap, emit, previous, instruction, rail=rail, weather=weather, weather_by_city=weather_by_city)
+                        if not refresh:
+                            # Models cannot declare that user bookings or payments were verified.
+                            for generated_day in itinerary.days:
+                                for generated_stop in generated_day.stops:
+                                    generated_stop.booking_anchor = generated_stop.booking_ref = generated_stop.booking_address = ''
+                                for generated_expense in generated_day.expenses:
+                                    generated_expense.booking_ref = ''
+                                    generated_expense.commitment = 'planned'
+                            for generated_transfer in itinerary.transfers:
+                                generated_transfer.booking_status = 'unconfirmed'
+                                if generated_transfer.price_status == 'user_reported':
+                                    generated_transfer.price_status = 'estimated'
                         if previous and day_index is not None:
                             for index in range(len(itinerary.days)):
                                 if index != day_index:
@@ -422,12 +457,22 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                             itinerary.transfers = [t.model_copy(deep=True) for t in previous.itinerary.transfers]
                         if not refresh and day_index is None:
                             await rail.enrich(itinerary)
+                        if trip.booked_transports:
+                            apply_booked_transports(itinerary, trip)
                         itinerary.guide_insights = [i for i in itinerary.guide_insights if i.source_index < len(trip.guides)]
+                        prepare_transfer_anchors(itinerary, trip)
                         prepare_accommodation(itinerary, trip, day_index)
+                        if previous and day_index is not None:
+                            # These helpers rebuild anchors globally. Other days are
+                            # outside this map query and must retain their verified
+                            # POIs, booking evidence, expenses and existing routes.
+                            for index in range(len(itinerary.days)):
+                                if index != day_index:
+                                    itinerary.days[index] = previous.itinerary.days[index].model_copy(deep=True)
                         stage = 'map_enrichment'
                         routes = await amap.enrich(itinerary, trip.mode, compare_modes=trip.compare_modes,
                                                    day_indices={day_index} if day_index is not None else None,
-                                                   optimize_meals=True, protected_text=f'{trip.preferences} {instruction} ' + (' '.join(g.text for g in trip.guides) if trip.guide_mode == 'prefer' else ''), enrich_details=True)
+                                                   optimize_meals=True, protected_text=f'{trip.preferences} {instruction} ' + (' '.join(g.text for g in trip.guides) if trip.guide_mode == 'prefer' else ''), enrich_details=True, people=trip.people)
                         if previous and day_index is not None:
                             routes.extend(r.model_copy(deep=True) for r in previous.routes if r.day_index != day_index)
                             routes.sort(key=lambda r: r.day_index)
@@ -455,11 +500,26 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                                 for stop in day.stops:
                                     if stop.id in baseline:
                                         stop.start, stop.end = baseline[stop.id]
-                        adjustments = cost_adjustments + repair_schedule(itinerary, routes, trip.start_time, only_day=day_index)
-                        adjustments += align_meals(trip, itinerary, routes, day_index, f'{trip.preferences} {instruction}')
+                        if trip.booked_transports or trip.confirmed_hotels or any(s.booking_anchor.startswith('transport_') for d in itinerary.days for s in d.stops):
+                            from types import SimpleNamespace
+                            conflicts, adjustments = repair_booking_schedule(SimpleNamespace(request=trip, itinerary=itinerary, routes=routes), only_days={day_index} if day_index is not None else None)
+                            if conflicts:
+                                raise ValueError('加入车站／机场接驳后无法排出可执行日程：' + '；'.join(conflicts) + '。请减少活动或调整时间；未保存本次方案，已有版本保留。')
+                            adjustments = cost_adjustments + adjustments
+                        else:
+                            adjustments = cost_adjustments + repair_schedule(itinerary, routes, trip.start_time, only_day=day_index)
+                            adjustments += align_meals(trip, itinerary, routes, day_index, f'{trip.preferences} {instruction}')
                         await emit('status', {'message': '正在校验时间、真实通行时长和全员预算'})
                         stage = 'validation'
                         report = await validator.validate(trip, itinerary, routes)
+                        temporal_errors = [item for item in report.errors if item.code in {
+                            'invalid_duration', 'time_overlap', 'transfer_time', 'before_start',
+                            'intercity_overlap', 'intercity_activity_overlap',
+                            'booking_departure_buffer', 'booking_arrival_buffer'}]
+                        if temporal_errors:
+                            raise ValueError('行程仍有时间冲突，无法当天完成可执行安排：' +
+                                '；'.join(dict.fromkeys(item.message for item in temporal_errors)) +
+                                '。请减少活动或调整交通／活动时间；未保存本次方案，已有版本保留。')
                     plan = PlanRecord(id=str(uuid4()), parent_id=previous.id if previous else None,
                         revision=previous.revision + 1 if previous else 1, created_at=datetime.now(timezone.utc),
                         request=effective_trip, itinerary=itinerary, routes=routes, validation=report, revision_instruction=instruction,
@@ -536,6 +596,7 @@ async def generate(trip: TripRequest, request: Request):
 @app.post('/api/plans/{plan_id}/revise')
 async def revise(plan_id: str, body: RevisionRequest, request: Request):
     previous = await get_plan(plan_id)
+    protect_confirmed_constraints(previous)
     trip = body.trip or previous.request
     if bool(trip.study) != bool(previous.request.study):
         raise HTTPException(422, '切换普通旅行与研学请重新生成')
@@ -559,6 +620,7 @@ async def revise(plan_id: str, body: RevisionRequest, request: Request):
 @app.post('/api/plans/{plan_id}/refresh')
 async def refresh_plan(plan_id: str, request: Request):
     previous = await get_plan(plan_id)
+    protect_confirmed_constraints(previous)
     if previous.request.study:
         raise HTTPException(422, '研学请通过修改重新核对原文和路线，不能直接刷新地点')
     trip = previous.request.model_copy(update={'mode': 'auto', 'compare_modes': True})
@@ -568,6 +630,7 @@ async def refresh_plan(plan_id: str, request: Request):
 @app.post('/api/plans/{plan_id}/route')
 async def select_route(plan_id: str, body: RouteSelection):
     previous = await get_plan(plan_id)
+    protect_confirmed_constraints(previous)
     if body.expected_routing_revision is not None and body.expected_routing_revision != previous.routing_revision:
         raise HTTPException(409, '行程已更新，请重新打开后选择交通方式')
     if previous.request.study:
@@ -607,7 +670,8 @@ async def select_route(plan_id: str, body: RouteSelection):
 
 @app.delete('/api/plans/{plan_id}')
 async def delete_plan(plan_id: str):
-    await get_plan(plan_id)
+    plan = await get_plan(plan_id)
+    protect_confirmed_constraints(plan)
     store.delete(plan_id)
     return {'deleted': True}
 

@@ -1,6 +1,6 @@
 import type { CityTransfer, TripRequest } from './types'
 
-export type TransportRequest = Pick<TripRequest, 'origin' | 'destination' | 'destinations' | 'include_origin_transport' | 'return_to_origin' | 'intercity_mode'>
+export type TransportRequest = Pick<TripRequest, 'origin' | 'destination' | 'destinations' | 'include_origin_transport' | 'return_to_origin' | 'intercity_mode' | 'intercity_modes'>
 const cityKey = (city: string) => city.trim().replace(/市$/, '')
 const pairKey = (from: string, to: string) => JSON.stringify([cityKey(from), cityKey(to)])
 
@@ -28,7 +28,7 @@ export function transferCoverage(request: TransportRequest, transfers: CityTrans
 export function transportRequestChanged(draft: TransportRequest, saved: TransportRequest): boolean {
   const signature = (r: TransportRequest) => JSON.stringify({
     cities: journeyCities(r).map(cityKey), outbound: Boolean(r.origin.trim() && (r.include_origin_transport || r.return_to_origin)),
-    inbound: Boolean(r.origin.trim() && r.return_to_origin), mode: journeyCities(r).length > 1 ? r.intercity_mode : null,
+    inbound: Boolean(r.origin.trim() && r.return_to_origin), modes: journeyCities(r).length > 1 ? [...(r.intercity_modes?.length ? r.intercity_modes : [r.intercity_mode])].sort() : null,
   })
   return signature(draft) !== signature(saved)
 }

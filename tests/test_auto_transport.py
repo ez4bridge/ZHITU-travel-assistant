@@ -11,7 +11,7 @@ from test_optimization import saved_plan
 
 
 @pytest.mark.asyncio
-async def test_auto_selects_shortest_available_provider_duration_even_when_comparison_flag_off():
+async def test_auto_selects_explainable_common_mode_even_when_comparison_flag_off():
     _, itinerary, routes = sample()
     amap = Amap('上海')
     amap.resolve = AsyncMock()
@@ -22,7 +22,7 @@ async def test_auto_selects_shortest_available_provider_duration_even_when_compa
     try:
         result = await amap.enrich(itinerary, 'auto', compare_modes=False)
         assert result[0].mode == 'transit' and result[0].duration_s == 300
-        assert len(result[0].alternatives) == 5 and '通行时间最短' in result[0].selection_reason
+        assert len(result[0].alternatives) == 5 and '常用方式' in result[0].selection_reason
         assert not result[0].user_selected
     finally:
         await amap.close()
@@ -41,7 +41,8 @@ async def test_auto_survives_one_endpoint_quota_and_uses_other_real_routes():
     amap.route = route
     try:
         result = await amap.enrich(itinerary, 'auto')
-        assert result[0].mode == 'bicycling' and result[0].available
+        assert result[0].mode == 'transit' and result[0].available
+        assert '常用方式' in result[0].selection_reason
         assert not next(o for o in result[0].alternatives if o.mode == 'walking').available
     finally:
         await amap.close()

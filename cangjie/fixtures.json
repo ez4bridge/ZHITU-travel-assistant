@@ -1,0 +1,2098 @@
+[
+  {
+    "name": "valid",
+    "input": {
+      "budget_cents": 100000,
+      "total_cents": 20000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "外滩",
+              "identity": "poi1",
+              "start_min": 540,
+              "end_min": 600,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            },
+            {
+              "id": "b",
+              "name": "豫园",
+              "identity": "poi2",
+              "start_min": 630,
+              "end_min": 720,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [
+        {
+          "day_index": 0,
+          "from_id": "a",
+          "to_id": "b",
+          "duration_min": 20,
+          "available": true
+        }
+      ]
+    },
+    "expected_status": "passed",
+    "expected_errors": [],
+    "expected_warnings": []
+  },
+  {
+    "name": "budget",
+    "input": {
+      "budget_cents": 100000,
+      "total_cents": 100001,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "外滩",
+              "identity": "poi1",
+              "start_min": 540,
+              "end_min": 600,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            },
+            {
+              "id": "b",
+              "name": "豫园",
+              "identity": "poi2",
+              "start_min": 630,
+              "end_min": 720,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [
+        {
+          "day_index": 0,
+          "from_id": "a",
+          "to_id": "b",
+          "duration_min": 20,
+          "available": true
+        }
+      ]
+    },
+    "expected_status": "issues",
+    "expected_errors": [
+      "over_budget"
+    ],
+    "expected_warnings": []
+  },
+  {
+    "name": "overlap",
+    "input": {
+      "budget_cents": 100000,
+      "total_cents": 20000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "外滩",
+              "identity": "poi1",
+              "start_min": 540,
+              "end_min": 600,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            },
+            {
+              "id": "b",
+              "name": "豫园",
+              "identity": "poi2",
+              "start_min": 590,
+              "end_min": 720,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [
+        {
+          "day_index": 0,
+          "from_id": "a",
+          "to_id": "b",
+          "duration_min": 20,
+          "available": true
+        }
+      ]
+    },
+    "expected_status": "issues",
+    "expected_errors": [
+      "time_overlap",
+      "transfer_time"
+    ],
+    "expected_warnings": []
+  },
+  {
+    "name": "transfer",
+    "input": {
+      "budget_cents": 100000,
+      "total_cents": 20000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "外滩",
+              "identity": "poi1",
+              "start_min": 540,
+              "end_min": 600,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            },
+            {
+              "id": "b",
+              "name": "豫园",
+              "identity": "poi2",
+              "start_min": 630,
+              "end_min": 720,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [
+        {
+          "day_index": 0,
+          "from_id": "a",
+          "to_id": "b",
+          "duration_min": 31,
+          "available": true
+        }
+      ]
+    },
+    "expected_status": "issues",
+    "expected_errors": [
+      "transfer_time"
+    ],
+    "expected_warnings": []
+  },
+  {
+    "name": "duplicate",
+    "input": {
+      "budget_cents": 100000,
+      "total_cents": 20000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "外滩",
+              "identity": "poi1",
+              "start_min": 540,
+              "end_min": 600,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            },
+            {
+              "id": "b",
+              "name": "豫园",
+              "identity": "poi1",
+              "start_min": 630,
+              "end_min": 720,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [
+        {
+          "day_index": 0,
+          "from_id": "a",
+          "to_id": "b",
+          "duration_min": 20,
+          "available": true
+        }
+      ]
+    },
+    "expected_status": "issues",
+    "expected_errors": [],
+    "expected_warnings": [
+      "duplicate_stop"
+    ]
+  },
+  {
+    "name": "unknowns",
+    "input": {
+      "budget_cents": 100000,
+      "total_cents": 20000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "外滩",
+              "identity": "poi1",
+              "start_min": 540,
+              "end_min": 600,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            },
+            {
+              "id": "b",
+              "name": "豫园",
+              "identity": "poi2",
+              "start_min": 630,
+              "end_min": 720,
+              "poi_ok": false,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": []
+    },
+    "expected_status": "issues",
+    "expected_errors": [
+      "missing_location",
+      "missing_route"
+    ],
+    "expected_warnings": []
+  },
+  {
+    "name": "duration",
+    "input": {
+      "budget_cents": 100000,
+      "total_cents": 20000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "外滩",
+              "identity": "poi1",
+              "start_min": 540,
+              "end_min": 530,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            },
+            {
+              "id": "b",
+              "name": "豫园",
+              "identity": "poi2",
+              "start_min": 630,
+              "end_min": 720,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [
+        {
+          "day_index": 0,
+          "from_id": "a",
+          "to_id": "b",
+          "duration_min": 20,
+          "available": true
+        }
+      ]
+    },
+    "expected_status": "issues",
+    "expected_errors": [
+      "invalid_duration"
+    ],
+    "expected_warnings": []
+  },
+  {
+    "name": "unicode_and_hotel_return",
+    "input": {
+      "budget_cents": 100000,
+      "total_cents": 20000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [
+        {
+          "code": "note",
+          "message": "上海+\"\\\n🏞",
+          "day_index": null,
+          "stop_id": null
+        }
+      ],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "外滩",
+              "identity": "poi1",
+              "start_min": 540,
+              "end_min": 600,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            },
+            {
+              "id": "b",
+              "name": "豫园",
+              "identity": "poi1",
+              "start_min": 630,
+              "end_min": 720,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": false
+            }
+          ]
+        }
+      ],
+      "legs": [
+        {
+          "day_index": 0,
+          "from_id": "a",
+          "to_id": "b",
+          "duration_min": 20,
+          "available": true
+        }
+      ]
+    },
+    "expected_status": "passed_with_unknowns",
+    "expected_errors": [],
+    "expected_warnings": []
+  },
+  {
+    "name": "national_roundtrip",
+    "input": {
+      "budget_cents": 1000000,
+      "total_cents": 165237,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [
+        {
+          "code": "estimated_prices",
+          "message": "门票、餐饮、住宿和交通费用均为估算，未查询实时价格",
+          "day_index": null,
+          "stop_id": null
+        },
+        {
+          "code": "opening_hours",
+          "message": "外滩：营业时间、预约要求未验证",
+          "day_index": 0,
+          "stop_id": "d1s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "西湖：营业时间、预约要求未验证",
+          "day_index": 1,
+          "stop_id": "d2s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "拙政园：营业时间、预约要求未验证",
+          "day_index": 2,
+          "stop_id": "d3s1"
+        }
+      ],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "d1s1",
+              "name": "外滩",
+              "identity": "poi-0",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d2s1",
+              "name": "西湖",
+              "identity": "poi-1",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d3s1",
+              "name": "拙政园",
+              "identity": "poi-2",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [],
+      "journey": {
+        "cities": [
+          "北京",
+          "上海",
+          "杭州",
+          "苏州",
+          "北京"
+        ],
+        "destinations": [
+          "上海",
+          "杭州",
+          "苏州"
+        ],
+        "start_min": 540,
+        "end_min": 4320,
+        "stops": [
+          {
+            "id": "d1s1",
+            "city": "上海",
+            "start_min": 840,
+            "end_min": 960,
+            "day_index": 0
+          },
+          {
+            "id": "d2s1",
+            "city": "杭州",
+            "start_min": 2280,
+            "end_min": 2400,
+            "day_index": 1
+          },
+          {
+            "id": "d3s1",
+            "city": "苏州",
+            "start_min": 3720,
+            "end_min": 3840,
+            "day_index": 2
+          }
+        ],
+        "transfers": [
+          {
+            "from_city": "北京",
+            "to_city": "上海",
+            "start_min": 540,
+            "end_min": 720,
+            "day_index": 0
+          },
+          {
+            "from_city": "上海",
+            "to_city": "杭州",
+            "start_min": 1980,
+            "end_min": 2160,
+            "day_index": 1
+          },
+          {
+            "from_city": "杭州",
+            "to_city": "苏州",
+            "start_min": 3420,
+            "end_min": 3600,
+            "day_index": 2
+          },
+          {
+            "from_city": "苏州",
+            "to_city": "北京",
+            "start_min": 3960,
+            "end_min": 4260,
+            "day_index": 2
+          }
+        ]
+      }
+    },
+    "expected_status": "passed_with_unknowns",
+    "expected_errors": [],
+    "expected_warnings": []
+  },
+  {
+    "name": "national_missing_transfer",
+    "input": {
+      "budget_cents": 1000000,
+      "total_cents": 135234,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [
+        {
+          "code": "estimated_prices",
+          "message": "门票、餐饮、住宿和交通费用均为估算，未查询实时价格",
+          "day_index": null,
+          "stop_id": null
+        },
+        {
+          "code": "opening_hours",
+          "message": "外滩：营业时间、预约要求未验证",
+          "day_index": 0,
+          "stop_id": "d1s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "西湖：营业时间、预约要求未验证",
+          "day_index": 1,
+          "stop_id": "d2s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "拙政园：营业时间、预约要求未验证",
+          "day_index": 2,
+          "stop_id": "d3s1"
+        }
+      ],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "d1s1",
+              "name": "外滩",
+              "identity": "poi-0",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d2s1",
+              "name": "西湖",
+              "identity": "poi-1",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d3s1",
+              "name": "拙政园",
+              "identity": "poi-2",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [],
+      "journey": {
+        "cities": [
+          "北京",
+          "上海",
+          "杭州",
+          "苏州",
+          "北京"
+        ],
+        "destinations": [
+          "上海",
+          "杭州",
+          "苏州"
+        ],
+        "start_min": 540,
+        "end_min": 4320,
+        "stops": [
+          {
+            "id": "d1s1",
+            "city": "上海",
+            "start_min": 840,
+            "end_min": 960,
+            "day_index": 0
+          },
+          {
+            "id": "d2s1",
+            "city": "杭州",
+            "start_min": 2280,
+            "end_min": 2400,
+            "day_index": 1
+          },
+          {
+            "id": "d3s1",
+            "city": "苏州",
+            "start_min": 3720,
+            "end_min": 3840,
+            "day_index": 2
+          }
+        ],
+        "transfers": [
+          {
+            "from_city": "北京",
+            "to_city": "上海",
+            "start_min": 540,
+            "end_min": 720,
+            "day_index": 0
+          },
+          {
+            "from_city": "杭州",
+            "to_city": "苏州",
+            "start_min": 3420,
+            "end_min": 3600,
+            "day_index": 2
+          },
+          {
+            "from_city": "苏州",
+            "to_city": "北京",
+            "start_min": 3960,
+            "end_min": 4260,
+            "day_index": 2
+          }
+        ]
+      }
+    },
+    "expected_status": "issues",
+    "expected_errors": [
+      "intercity_route",
+      "city_arrival"
+    ],
+    "expected_warnings": []
+  },
+  {
+    "name": "national_activity_overlap",
+    "input": {
+      "budget_cents": 1000000,
+      "total_cents": 165237,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [
+        {
+          "code": "estimated_prices",
+          "message": "门票、餐饮、住宿和交通费用均为估算，未查询实时价格",
+          "day_index": null,
+          "stop_id": null
+        },
+        {
+          "code": "opening_hours",
+          "message": "外滩：营业时间、预约要求未验证",
+          "day_index": 0,
+          "stop_id": "d1s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "西湖：营业时间、预约要求未验证",
+          "day_index": 1,
+          "stop_id": "d2s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "拙政园：营业时间、预约要求未验证",
+          "day_index": 2,
+          "stop_id": "d3s1"
+        }
+      ],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "d1s1",
+              "name": "外滩",
+              "identity": "poi-0",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d2s1",
+              "name": "西湖",
+              "identity": "poi-1",
+              "start_min": 660,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d3s1",
+              "name": "拙政园",
+              "identity": "poi-2",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [],
+      "journey": {
+        "cities": [
+          "北京",
+          "上海",
+          "杭州",
+          "苏州",
+          "北京"
+        ],
+        "destinations": [
+          "上海",
+          "杭州",
+          "苏州"
+        ],
+        "start_min": 540,
+        "end_min": 4320,
+        "stops": [
+          {
+            "id": "d1s1",
+            "city": "上海",
+            "start_min": 840,
+            "end_min": 960,
+            "day_index": 0
+          },
+          {
+            "id": "d2s1",
+            "city": "杭州",
+            "start_min": 2100,
+            "end_min": 2400,
+            "day_index": 1
+          },
+          {
+            "id": "d3s1",
+            "city": "苏州",
+            "start_min": 3720,
+            "end_min": 3840,
+            "day_index": 2
+          }
+        ],
+        "transfers": [
+          {
+            "from_city": "北京",
+            "to_city": "上海",
+            "start_min": 540,
+            "end_min": 720,
+            "day_index": 0
+          },
+          {
+            "from_city": "上海",
+            "to_city": "杭州",
+            "start_min": 1980,
+            "end_min": 2160,
+            "day_index": 1
+          },
+          {
+            "from_city": "杭州",
+            "to_city": "苏州",
+            "start_min": 3420,
+            "end_min": 3600,
+            "day_index": 2
+          },
+          {
+            "from_city": "苏州",
+            "to_city": "北京",
+            "start_min": 3960,
+            "end_min": 4260,
+            "day_index": 2
+          }
+        ]
+      }
+    },
+    "expected_status": "issues",
+    "expected_errors": [
+      "intercity_activity_overlap"
+    ],
+    "expected_warnings": []
+  },
+  {
+    "name": "national_missing_city",
+    "input": {
+      "budget_cents": 1000000,
+      "total_cents": 165237,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [
+        {
+          "code": "estimated_prices",
+          "message": "门票、餐饮、住宿和交通费用均为估算，未查询实时价格",
+          "day_index": null,
+          "stop_id": null
+        },
+        {
+          "code": "opening_hours",
+          "message": "外滩：营业时间、预约要求未验证",
+          "day_index": 0,
+          "stop_id": "d1s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "西湖：营业时间、预约要求未验证",
+          "day_index": 1,
+          "stop_id": "d2s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "拙政园：营业时间、预约要求未验证",
+          "day_index": 2,
+          "stop_id": "d3s1"
+        }
+      ],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "d1s1",
+              "name": "外滩",
+              "identity": "poi-0",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d2s1",
+              "name": "西湖",
+              "identity": "poi-1",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d3s1",
+              "name": "拙政园",
+              "identity": "poi-2",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [],
+      "journey": {
+        "cities": [
+          "北京",
+          "上海",
+          "杭州",
+          "苏州",
+          "北京"
+        ],
+        "destinations": [
+          "上海",
+          "杭州",
+          "苏州"
+        ],
+        "start_min": 540,
+        "end_min": 4320,
+        "stops": [
+          {
+            "id": "d1s1",
+            "city": "上海",
+            "start_min": 840,
+            "end_min": 960,
+            "day_index": 0
+          },
+          {
+            "id": "d2s1",
+            "city": "",
+            "start_min": 2280,
+            "end_min": 2400,
+            "day_index": 1
+          },
+          {
+            "id": "d3s1",
+            "city": "苏州",
+            "start_min": 3720,
+            "end_min": 3840,
+            "day_index": 2
+          }
+        ],
+        "transfers": [
+          {
+            "from_city": "北京",
+            "to_city": "上海",
+            "start_min": 540,
+            "end_min": 720,
+            "day_index": 0
+          },
+          {
+            "from_city": "上海",
+            "to_city": "杭州",
+            "start_min": 1980,
+            "end_min": 2160,
+            "day_index": 1
+          },
+          {
+            "from_city": "杭州",
+            "to_city": "苏州",
+            "start_min": 3420,
+            "end_min": 3600,
+            "day_index": 2
+          },
+          {
+            "from_city": "苏州",
+            "to_city": "北京",
+            "start_min": 3960,
+            "end_min": 4260,
+            "day_index": 2
+          }
+        ]
+      }
+    },
+    "expected_status": "issues",
+    "expected_errors": [
+      "city_sequence",
+      "city_arrival"
+    ],
+    "expected_warnings": []
+  },
+  {
+    "name": "national_before_departure",
+    "input": {
+      "budget_cents": 1000000,
+      "total_cents": 165237,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [
+        {
+          "code": "estimated_prices",
+          "message": "门票、餐饮、住宿和交通费用均为估算，未查询实时价格",
+          "day_index": null,
+          "stop_id": null
+        },
+        {
+          "code": "opening_hours",
+          "message": "外滩：营业时间、预约要求未验证",
+          "day_index": 0,
+          "stop_id": "d1s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "西湖：营业时间、预约要求未验证",
+          "day_index": 1,
+          "stop_id": "d2s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "拙政园：营业时间、预约要求未验证",
+          "day_index": 2,
+          "stop_id": "d3s1"
+        }
+      ],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "d1s1",
+              "name": "外滩",
+              "identity": "poi-0",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d2s1",
+              "name": "西湖",
+              "identity": "poi-1",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d3s1",
+              "name": "拙政园",
+              "identity": "poi-2",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [],
+      "journey": {
+        "cities": [
+          "北京",
+          "上海",
+          "杭州",
+          "苏州",
+          "北京"
+        ],
+        "destinations": [
+          "上海",
+          "杭州",
+          "苏州"
+        ],
+        "start_min": 540,
+        "end_min": 4320,
+        "stops": [
+          {
+            "id": "d1s1",
+            "city": "上海",
+            "start_min": 840,
+            "end_min": 960,
+            "day_index": 0
+          },
+          {
+            "id": "d2s1",
+            "city": "杭州",
+            "start_min": 2280,
+            "end_min": 2400,
+            "day_index": 1
+          },
+          {
+            "id": "d3s1",
+            "city": "苏州",
+            "start_min": 3720,
+            "end_min": 3840,
+            "day_index": 2
+          }
+        ],
+        "transfers": [
+          {
+            "from_city": "北京",
+            "to_city": "上海",
+            "start_min": 480,
+            "end_min": 720,
+            "day_index": 0
+          },
+          {
+            "from_city": "上海",
+            "to_city": "杭州",
+            "start_min": 1980,
+            "end_min": 2160,
+            "day_index": 1
+          },
+          {
+            "from_city": "杭州",
+            "to_city": "苏州",
+            "start_min": 3420,
+            "end_min": 3600,
+            "day_index": 2
+          },
+          {
+            "from_city": "苏州",
+            "to_city": "北京",
+            "start_min": 3960,
+            "end_min": 4260,
+            "day_index": 2
+          }
+        ]
+      }
+    },
+    "expected_status": "issues",
+    "expected_errors": [
+      "intercity_dates",
+      "intercity_overlap"
+    ],
+    "expected_warnings": []
+  },
+  {
+    "name": "national_same_day_boundary",
+    "input": {
+      "budget_cents": 1000000,
+      "total_cents": 165237,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [
+        {
+          "code": "estimated_prices",
+          "message": "门票、餐饮、住宿和交通费用均为估算，未查询实时价格",
+          "day_index": null,
+          "stop_id": null
+        },
+        {
+          "code": "opening_hours",
+          "message": "外滩：营业时间、预约要求未验证",
+          "day_index": 0,
+          "stop_id": "d1s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "西湖：营业时间、预约要求未验证",
+          "day_index": 0,
+          "stop_id": "d1s2"
+        },
+        {
+          "code": "opening_hours",
+          "message": "西湖：营业时间、预约要求未验证",
+          "day_index": 1,
+          "stop_id": "d2s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "拙政园：营业时间、预约要求未验证",
+          "day_index": 2,
+          "stop_id": "d3s1"
+        }
+      ],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "d1s1",
+              "name": "外滩",
+              "identity": "poi-0",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            },
+            {
+              "id": "d1s2",
+              "name": "西湖",
+              "identity": "extra",
+              "start_min": 1080,
+              "end_min": 1140,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d2s1",
+              "name": "西湖",
+              "identity": "poi-1",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d3s1",
+              "name": "拙政园",
+              "identity": "poi-2",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [
+        {
+          "day_index": 0,
+          "from_id": "d1s1",
+          "to_id": "d1s2",
+          "available": false,
+          "duration_min": 0,
+          "intercity": true
+        }
+      ],
+      "journey": {
+        "cities": [
+          "北京",
+          "上海",
+          "杭州",
+          "苏州",
+          "北京"
+        ],
+        "destinations": [
+          "上海",
+          "杭州",
+          "苏州"
+        ],
+        "start_min": 540,
+        "end_min": 4320,
+        "stops": [
+          {
+            "id": "d1s1",
+            "city": "上海",
+            "start_min": 840,
+            "end_min": 960,
+            "day_index": 0
+          },
+          {
+            "id": "d1s2",
+            "city": "杭州",
+            "start_min": 1080,
+            "end_min": 1140,
+            "day_index": 0
+          },
+          {
+            "id": "d2s1",
+            "city": "杭州",
+            "start_min": 2280,
+            "end_min": 2400,
+            "day_index": 1
+          },
+          {
+            "id": "d3s1",
+            "city": "苏州",
+            "start_min": 3720,
+            "end_min": 3840,
+            "day_index": 2
+          }
+        ],
+        "transfers": [
+          {
+            "from_city": "北京",
+            "to_city": "上海",
+            "start_min": 540,
+            "end_min": 720,
+            "day_index": 0
+          },
+          {
+            "from_city": "上海",
+            "to_city": "杭州",
+            "start_min": 990,
+            "end_min": 1050,
+            "day_index": 0
+          },
+          {
+            "from_city": "杭州",
+            "to_city": "苏州",
+            "start_min": 3420,
+            "end_min": 3600,
+            "day_index": 2
+          },
+          {
+            "from_city": "苏州",
+            "to_city": "北京",
+            "start_min": 3960,
+            "end_min": 4260,
+            "day_index": 2
+          }
+        ]
+      }
+    },
+    "expected_status": "passed_with_unknowns",
+    "expected_errors": [],
+    "expected_warnings": []
+  },
+  {
+    "name": "national_overnight",
+    "input": {
+      "budget_cents": 1000000,
+      "total_cents": 165237,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [
+        {
+          "code": "estimated_prices",
+          "message": "门票、餐饮、住宿和交通费用均为估算，未查询实时价格",
+          "day_index": null,
+          "stop_id": null
+        },
+        {
+          "code": "opening_hours",
+          "message": "外滩：营业时间、预约要求未验证",
+          "day_index": 0,
+          "stop_id": "d1s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "西湖：营业时间、预约要求未验证",
+          "day_index": 1,
+          "stop_id": "d2s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "拙政园：营业时间、预约要求未验证",
+          "day_index": 2,
+          "stop_id": "d3s1"
+        }
+      ],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "d1s1",
+              "name": "外滩",
+              "identity": "poi-0",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d2s1",
+              "name": "西湖",
+              "identity": "poi-1",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d3s1",
+              "name": "拙政园",
+              "identity": "poi-2",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [],
+      "journey": {
+        "cities": [
+          "北京",
+          "上海",
+          "杭州",
+          "苏州",
+          "北京"
+        ],
+        "destinations": [
+          "上海",
+          "杭州",
+          "苏州"
+        ],
+        "start_min": 540,
+        "end_min": 4320,
+        "stops": [
+          {
+            "id": "d1s1",
+            "city": "上海",
+            "start_min": 840,
+            "end_min": 960,
+            "day_index": 0
+          },
+          {
+            "id": "d2s1",
+            "city": "杭州",
+            "start_min": 2280,
+            "end_min": 2400,
+            "day_index": 1
+          },
+          {
+            "id": "d3s1",
+            "city": "苏州",
+            "start_min": 3720,
+            "end_min": 3840,
+            "day_index": 2
+          }
+        ],
+        "transfers": [
+          {
+            "from_city": "北京",
+            "to_city": "上海",
+            "start_min": 540,
+            "end_min": 720,
+            "day_index": 0
+          },
+          {
+            "from_city": "上海",
+            "to_city": "杭州",
+            "start_min": 1320,
+            "end_min": 1860,
+            "day_index": 0
+          },
+          {
+            "from_city": "杭州",
+            "to_city": "苏州",
+            "start_min": 3420,
+            "end_min": 3600,
+            "day_index": 2
+          },
+          {
+            "from_city": "苏州",
+            "to_city": "北京",
+            "start_min": 3960,
+            "end_min": 4260,
+            "day_index": 2
+          }
+        ]
+      }
+    },
+    "expected_status": "passed_with_unknowns",
+    "expected_errors": [],
+    "expected_warnings": []
+  },
+  {
+    "name": "stay_half_day_matched",
+    "input": {
+      "budget_cents": 300000,
+      "total_cents": 5000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [
+        {
+          "code": "estimated_prices",
+          "message": "门票、餐饮、住宿和交通费用均为估算，未查询实时价格",
+          "day_index": null,
+          "stop_id": null
+        },
+        {
+          "code": "opening_hours",
+          "message": "天坛：营业时间、预约要求未验证",
+          "day_index": 0,
+          "stop_id": "a"
+        }
+      ],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "天坛",
+              "identity": "北京:天坛",
+              "start_min": 540,
+              "end_min": 720,
+              "poi_ok": false,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [],
+      "journey": {
+        "cities": [
+          "北京"
+        ],
+        "destinations": [
+          "北京"
+        ],
+        "start_min": 540,
+        "end_min": 1440,
+        "stops": [
+          {
+            "id": "a",
+            "city": "北京",
+            "start_min": 540,
+            "end_min": 720,
+            "day_index": 0
+          }
+        ],
+        "stays": [
+          {
+            "city": "北京",
+            "expected_halves": 1,
+            "actual_halves": 1
+          }
+        ],
+        "transfers": []
+      }
+    },
+    "expected_status": "issues",
+    "expected_errors": [
+      "missing_location"
+    ],
+    "expected_warnings": []
+  },
+  {
+    "name": "stay_duration_shortfall",
+    "input": {
+      "budget_cents": 300000,
+      "total_cents": 5000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [
+        {
+          "code": "estimated_prices",
+          "message": "门票、餐饮、住宿和交通费用均为估算，未查询实时价格",
+          "day_index": null,
+          "stop_id": null
+        },
+        {
+          "code": "opening_hours",
+          "message": "天坛：营业时间、预约要求未验证",
+          "day_index": 0,
+          "stop_id": "a"
+        }
+      ],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "天坛",
+              "identity": "北京:天坛",
+              "start_min": 540,
+              "end_min": 720,
+              "poi_ok": false,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [],
+      "journey": {
+        "cities": [
+          "北京"
+        ],
+        "destinations": [
+          "北京"
+        ],
+        "start_min": 540,
+        "end_min": 1440,
+        "stops": [
+          {
+            "id": "a",
+            "city": "北京",
+            "start_min": 540,
+            "end_min": 720,
+            "day_index": 0
+          }
+        ],
+        "stays": [
+          {
+            "city": "北京",
+            "expected_halves": 4,
+            "actual_halves": 1
+          }
+        ],
+        "transfers": []
+      }
+    },
+    "expected_status": "issues",
+    "expected_errors": [
+      "missing_location"
+    ],
+    "expected_warnings": [
+      "stay_preference"
+    ]
+  },
+  {
+    "name": "stay_duration_overallocated",
+    "input": {
+      "budget_cents": 300000,
+      "total_cents": 5000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [
+        {
+          "code": "estimated_prices",
+          "message": "门票、餐饮、住宿和交通费用均为估算，未查询实时价格",
+          "day_index": null,
+          "stop_id": null
+        },
+        {
+          "code": "opening_hours",
+          "message": "天坛：营业时间、预约要求未验证",
+          "day_index": 0,
+          "stop_id": "a"
+        }
+      ],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "天坛",
+              "identity": "北京:天坛",
+              "start_min": 540,
+              "end_min": 900,
+              "poi_ok": false,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [],
+      "journey": {
+        "cities": [
+          "北京"
+        ],
+        "destinations": [
+          "北京"
+        ],
+        "start_min": 540,
+        "end_min": 1440,
+        "stops": [
+          {
+            "id": "a",
+            "city": "北京",
+            "start_min": 540,
+            "end_min": 900,
+            "day_index": 0
+          }
+        ],
+        "stays": [
+          {
+            "city": "北京",
+            "expected_halves": 1,
+            "actual_halves": 2
+          }
+        ],
+        "transfers": []
+      }
+    },
+    "expected_status": "issues",
+    "expected_errors": [
+      "missing_location"
+    ],
+    "expected_warnings": [
+      "stay_preference"
+    ]
+  },
+  {
+    "name": "single_city_stay_without_intercity_unknown",
+    "input": {
+      "budget_cents": 300000,
+      "total_cents": 5000,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "a",
+              "name": "天坛",
+              "identity": "北京:天坛",
+              "start_min": 540,
+              "end_min": 720,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [],
+      "journey": {
+        "cities": [
+          "北京"
+        ],
+        "destinations": [
+          "北京"
+        ],
+        "start_min": 540,
+        "end_min": 1440,
+        "stops": [
+          {
+            "id": "a",
+            "city": "北京",
+            "start_min": 540,
+            "end_min": 720,
+            "day_index": 0
+          }
+        ],
+        "stays": [
+          {
+            "city": "北京",
+            "expected_halves": 1,
+            "actual_halves": 1
+          }
+        ],
+        "transfers": []
+      }
+    },
+    "expected_status": "passed",
+    "expected_errors": [],
+    "expected_warnings": []
+  },
+  {
+    "name": "origin_station_transport_only",
+    "input": {
+      "budget_cents": 1000000,
+      "total_cents": 165237,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [
+        {
+          "code": "estimated_prices",
+          "message": "门票、餐饮、住宿和交通费用均为估算，未查询实时价格",
+          "day_index": null,
+          "stop_id": null
+        },
+        {
+          "code": "opening_hours",
+          "message": "外滩：营业时间、预约要求未验证",
+          "day_index": 0,
+          "stop_id": "d1s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "西湖：营业时间、预约要求未验证",
+          "day_index": 1,
+          "stop_id": "d2s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "拙政园：营业时间、预约要求未验证",
+          "day_index": 2,
+          "stop_id": "d3s1"
+        }
+      ],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "d1s1",
+              "name": "外滩",
+              "identity": "poi-0",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d2s1",
+              "name": "西湖",
+              "identity": "poi-1",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d3s1",
+              "name": "拙政园",
+              "identity": "poi-2",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [],
+      "journey": {
+        "cities": [
+          "北京",
+          "上海",
+          "杭州",
+          "苏州",
+          "北京"
+        ],
+        "destinations": [
+          "上海",
+          "杭州",
+          "苏州"
+        ],
+        "start_min": 540,
+        "end_min": 4320,
+        "stops": [
+          {
+            "id": "origin-station",
+            "city": "北京",
+            "start_min": 480,
+            "end_min": 500,
+            "day_index": 0,
+            "transport_only": true
+          },
+          {
+            "id": "d1s1",
+            "city": "上海",
+            "start_min": 840,
+            "end_min": 960,
+            "day_index": 0
+          },
+          {
+            "id": "d2s1",
+            "city": "杭州",
+            "start_min": 2280,
+            "end_min": 2400,
+            "day_index": 1
+          },
+          {
+            "id": "d3s1",
+            "city": "苏州",
+            "start_min": 3720,
+            "end_min": 3840,
+            "day_index": 2
+          }
+        ],
+        "transfers": [
+          {
+            "from_city": "北京",
+            "to_city": "上海",
+            "start_min": 540,
+            "end_min": 720,
+            "day_index": 0
+          },
+          {
+            "from_city": "上海",
+            "to_city": "杭州",
+            "start_min": 1980,
+            "end_min": 2160,
+            "day_index": 1
+          },
+          {
+            "from_city": "杭州",
+            "to_city": "苏州",
+            "start_min": 3420,
+            "end_min": 3600,
+            "day_index": 2
+          },
+          {
+            "from_city": "苏州",
+            "to_city": "北京",
+            "start_min": 3960,
+            "end_min": 4260,
+            "day_index": 2
+          }
+        ]
+      }
+    },
+    "expected_status": "passed_with_unknowns",
+    "expected_errors": [],
+    "expected_warnings": []
+  },
+  {
+    "name": "origin_station_overlap_still_checked",
+    "input": {
+      "budget_cents": 1000000,
+      "total_cents": 165237,
+      "pre_errors": [],
+      "pre_warnings": [],
+      "unknowns": [
+        {
+          "code": "estimated_prices",
+          "message": "门票、餐饮、住宿和交通费用均为估算，未查询实时价格",
+          "day_index": null,
+          "stop_id": null
+        },
+        {
+          "code": "opening_hours",
+          "message": "外滩：营业时间、预约要求未验证",
+          "day_index": 0,
+          "stop_id": "d1s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "西湖：营业时间、预约要求未验证",
+          "day_index": 1,
+          "stop_id": "d2s1"
+        },
+        {
+          "code": "opening_hours",
+          "message": "拙政园：营业时间、预约要求未验证",
+          "day_index": 2,
+          "stop_id": "d3s1"
+        }
+      ],
+      "days": [
+        {
+          "stops": [
+            {
+              "id": "d1s1",
+              "name": "外滩",
+              "identity": "poi-0",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d2s1",
+              "name": "西湖",
+              "identity": "poi-1",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        },
+        {
+          "stops": [
+            {
+              "id": "d3s1",
+              "name": "拙政园",
+              "identity": "poi-2",
+              "start_min": 840,
+              "end_min": 960,
+              "poi_ok": true,
+              "needs_poi": true,
+              "check_duplicate": true
+            }
+          ]
+        }
+      ],
+      "legs": [],
+      "journey": {
+        "cities": [
+          "北京",
+          "上海",
+          "杭州",
+          "苏州",
+          "北京"
+        ],
+        "destinations": [
+          "上海",
+          "杭州",
+          "苏州"
+        ],
+        "start_min": 540,
+        "end_min": 4320,
+        "stops": [
+          {
+            "id": "origin-station",
+            "city": "北京",
+            "start_min": 550,
+            "end_min": 580,
+            "day_index": 0,
+            "transport_only": true
+          },
+          {
+            "id": "d1s1",
+            "city": "上海",
+            "start_min": 840,
+            "end_min": 960,
+            "day_index": 0
+          },
+          {
+            "id": "d2s1",
+            "city": "杭州",
+            "start_min": 2280,
+            "end_min": 2400,
+            "day_index": 1
+          },
+          {
+            "id": "d3s1",
+            "city": "苏州",
+            "start_min": 3720,
+            "end_min": 3840,
+            "day_index": 2
+          }
+        ],
+        "transfers": [
+          {
+            "from_city": "北京",
+            "to_city": "上海",
+            "start_min": 540,
+            "end_min": 720,
+            "day_index": 0
+          },
+          {
+            "from_city": "上海",
+            "to_city": "杭州",
+            "start_min": 1980,
+            "end_min": 2160,
+            "day_index": 1
+          },
+          {
+            "from_city": "杭州",
+            "to_city": "苏州",
+            "start_min": 3420,
+            "end_min": 3600,
+            "day_index": 2
+          },
+          {
+            "from_city": "苏州",
+            "to_city": "北京",
+            "start_min": 3960,
+            "end_min": 4260,
+            "day_index": 2
+          }
+        ]
+      }
+    },
+    "expected_status": "issues",
+    "expected_errors": [
+      "intercity_activity_overlap"
+    ],
+    "expected_warnings": []
+  }
+]

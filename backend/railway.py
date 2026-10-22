@@ -78,7 +78,8 @@ class Railway:
     def __init__(self, request: TripRequest, emit=None) -> None:
         self.request = request
         self.emit = emit
-        self.enabled = settings.rail_mcp_enabled and settings.rail_mcp_python.is_file()
+        self.enabled = ('train' in request.intercity_modes and settings.rail_mcp_enabled
+                        and settings.rail_mcp_python.is_file())
         self.client = RailMcpClient(settings.rail_mcp_python)
         self.station_cache = {}
         self.query_cache = {}
@@ -86,6 +87,22 @@ class Railway:
 
     async def close(self) -> None:
         await self.client.close()
+
+    def first_origin_leg(self, transfer, index: int) -> bool:
+        cities = self.request.journey_cities
+        return bool(index == 0 and self.request.include_origin_transport and len(cities) > 1
+                    and city_key(transfer.from_city) == city_key(self.request.origin) == city_key(cities[0])
+                    and city_key(transfer.to_city) == city_key(cities[1]))
+
+    def origin_departure_floor(self) -> datetime:
+        # start_time is when the user can start travelling, not an instruction
+        # to wait until a model's arbitrary afternoon departure. The default
+        # station buffer matches the station anchors; home-to-station travel
+        # remains unknown and must not be invented here.
+        requested = datetime.combine(self.request.start_date, time.fromisoformat(self.request.start_time), CHINA_TIMEZONE)
+        now = datetime.now(CHINA_TIMEZONE)
+        now = now.replace(second=0, microsecond=0) + timedelta(minutes=bool(now.second or now.microsecond))
+        return max(requested, now) + timedelta(minutes=60)
 
     async def stations(self, city: str) -> list:
         key = city_key(city)
@@ -146,7 +163,16 @@ class Railway:
         return {**result, 'message': result['message'] if candidates else '该时段无可用直达席位，交通仍为估算', 'options': candidates}
 
     async def enrich(self, itinerary: Itinerary) -> None:
-        for transfer in itinerary.transfers:
+        for index, transfer in enumerate(itinerary.transfers):
+            booking = next((b for b in self.request.booked_transports
+                            if city_key(b.from_city) == city_key(transfer.from_city)
+                            and city_key(b.to_city) == city_key(transfer.to_city)
+                            and (b.transfer_index is None or b.transfer_index == index)), None)
+            if booking:
+                # The main orchestration applies the actual user booking after
+                # enrichment. Never query/replace this segment or reinterpret
+                # its already-confirmed time as an optimization suggestion.
+                continue
             selected_id = transfer.rail_option_id
             # Model assertions, including assertions copied from an old version, are not evidence.
             transfer.schedule_status = 'estimated'
@@ -160,6 +186,8 @@ class Railway:
             transfer.source = ''
             transfer.query_note = ''
             transfer.rail_option_id = ''
+            if transfer.mode == 'flight':
+                transfer.query_note = '当前没有机票查询接口，时间与费用仅为规划估算；请外跳携程核对实际航班、机场、行李与含税全价。'
             if transfer.mode == 'train':
                 transfer.note = '交通时间与费用为估算；车票未预订，班次、余票及进出站接驳需确认'
             if transfer.mode != 'train' or not self.enabled:
@@ -167,13 +195,28 @@ class Railway:
                     transfer.query_note = '铁路查询未启用或服务环境未安装，交通仍为估算'
                 continue
             try:
-                result = await self.query(transfer.from_city, transfer.to_city, transfer.departure_date.isoformat(), transfer.departure_time)
+                first_origin = self.first_origin_leg(transfer, index)
+                floor = self.origin_departure_floor() if first_origin else None
+                query_date = floor.date().isoformat() if floor else transfer.departure_date.isoformat()
+                earliest = floor.strftime('%H:%M') if floor else transfer.departure_time
+                result = await self.query(transfer.from_city, transfer.to_city, query_date, earliest)
                 option = self.options.get(selected_id)
-                if not option or (city_key(option['from_city']), city_key(option['to_city']), option['departure_date']) != (city_key(transfer.from_city), city_key(transfer.to_city), transfer.departure_date.isoformat()):
-                    key = (city_key(transfer.from_city), city_key(transfer.to_city), transfer.departure_date.isoformat())
-                    candidates = self.query_cache.get(key, result)['options']
-                    option = next((candidate for candidate in candidates
-                                   if candidate['departure_time'] >= transfer.departure_time and self.fits(candidate, itinerary)), None)
+                if (first_origin or not option
+                        or (city_key(option['from_city']), city_key(option['to_city']), option['departure_date']) !=
+                           (city_key(transfer.from_city), city_key(transfer.to_city), query_date)
+                        or option['departure_time'] < earliest or not self.fits(option, itinerary)):
+                    key = (city_key(transfer.from_city), city_key(transfer.to_city), query_date)
+                    candidates = [candidate for candidate in self.query_cache.get(key, result)['options']
+                                  if candidate['departure_time'] >= earliest and self.fits(candidate, itinerary)]
+                    if first_origin:
+                        # Only actual provider rows participate. Earlier arrival
+                        # preserves sightseeing time; duration and known price
+                        # break ties. This is a product rule, not a global optimum.
+                        candidates.sort(key=lambda candidate: (
+                            candidate['arrival_date'], candidate['arrival_time'], candidate['duration_minutes'],
+                            Decimal(candidate['reference_price']) if candidate['reference_price'] is not None else Decimal('Infinity'),
+                            candidate['departure_time']))
+                    option = next(iter(candidates), None)
                 if not option:
                     transfer.query_note = result['message'] if not result['options'] else '未找到符合当前活动时间窗口的车次，请调整出行时段'
                     continue
@@ -191,6 +234,10 @@ class Railway:
                     transfer.basis = 'person'
                     transfer.price_status = 'reference'
                 transfer.note = '时刻与席位为查询时快照；票价为公布参考价或估算，未预订，进出站接驳需确认'
+                if first_origin:
+                    transfer.query_note = ('首段按可出发时刻及默认60分钟进站预留筛选，不受模型初稿出发时间限制；'
+                        '在本次已查且不与活动冲突的候选中优先较早到达，再比较时长与参考价。'
+                        '当天已过时刻不推荐；住所到车站接驳、实际进站要求与余票仍须确认。')
             except Exception as error:
                 transfer.query_note = '铁路查询未完成，交通仍为估算：' + settings.safe_error(error)[:160]
 

@@ -19,7 +19,7 @@ def ensure_transfer_coverage(request: TripRequest, itinerary: Itinerary) -> None
     for day in itinerary.days:
         for stop in day.stops:
             # Boarding belongs to the intercity leg; never force an origin station into the destination city.
-            if stop.kind != 'break' or not re.search(r'候车|候机|安检|取票', stop.name) or not re.search(r'站|机场', stop.name):
+            if stop.booking_anchor or stop.kind != 'break' or not re.search(r'候车|候机|安检|取票', stop.name) or not re.search(r'站|机场', stop.name):
                 continue
             if re.search(r'地铁|公交', stop.name):
                 continue
@@ -49,7 +49,8 @@ def normalized_journey(request: TripRequest, itinerary: Itinerary) -> dict | Non
         return int((datetime.combine(day, time.fromisoformat(clock)) - midnight).total_seconds() // 60)
 
     stops = [{'id': stop.id, 'city': city_key(stop.city or (request.city_route[0] if len(request.city_route) == 1 else '')),
-              'start_min': moment(day.date, stop.start), 'end_min': moment(day.date, stop.end), 'day_index': index}
+              'start_min': moment(day.date, stop.start), 'end_min': moment(day.date, stop.end), 'day_index': index,
+              'transport_only': bool(stop.booking_anchor.startswith('transport_') and city_key(stop.city) not in {city_key(c) for c in request.city_route})}
              for index, day in enumerate(itinerary.days) for stop in day.stops]
     # A preference is measured in occupied sightseeing half-days, not hotel nights
     # or raw date counts. Transit, meals and overnight stays do not fill a half-day.
@@ -58,10 +59,12 @@ def normalized_journey(request: TripRequest, itinerary: Itinerary) -> dict | Non
     for index, day in enumerate(itinerary.days):
         for stop in day.stops:
             city = city_key(stop.city or (request.city_route[0] if len(request.city_route) == 1 else ''))
+            if stop.booking_anchor.startswith('transport_') and city not in {city_key(c) for c in request.city_route}:
+                continue
             if city != previous_city:
                 visit_index += 1
                 previous_city = city
-            if stop.kind not in ('sight', 'break'):
+            if stop.kind not in ('sight', 'break') or stop.booking_anchor:
                 continue
             start, end = time.fromisoformat(stop.start), time.fromisoformat(stop.end)
             if end <= start:
@@ -99,6 +102,8 @@ def validate_journey(journey: dict) -> tuple[list[dict], list[dict], list[dict]]
         errors.append(issue('intercity_route', '跨城交通必须按顺序连接出发地、全部目的地及所选返程'))
     visited = []
     for stop in journey['stops']:
+        if stop.get('transport_only'):
+            continue
         if not visited or visited[-1] != stop['city']:
             visited.append(stop['city'])
     if visited != journey['destinations']:
@@ -132,5 +137,5 @@ def validate_journey(journey: dict) -> tuple[list[dict], list[dict], list[dict]]
         elif city != stop['city']:
             errors.append(issue('city_arrival', '活动所在城市与交通到达安排不一致', stop['day_index'], stop['id']))
     if expected or transfers:
-        unknowns.append(issue('intercity_estimates', '跨城车票未预订；票价、余票和进出站接驳请在出行前确认'))
+        unknowns.append(issue('intercity_estimates', '跨城交通包含估算／用户提供信息；班次、订单、票价和接驳请以承运方为准，系统未查验订单'))
     return errors, warnings, unknowns

@@ -1,4 +1,7 @@
-"""Signed Amap queries, city-scoped POIs and verified road geometry."""
+"""Signed Amap queries, administrative POIs and verified road geometry.
+
+Signing follows NVIDIA-TRAVEL/amap_service.py (Mulan PSL v2).
+"""
 import hashlib
 import asyncio
 import re
@@ -235,9 +238,25 @@ class Amap:
         candidates = [p for p in candidates if query in p['name'] or p['name'] in query
                       or SequenceMatcher(None, query, p['name']).ratio() >= .75]
         candidates = list({p['id']: p for p in candidates}.values())
+        booking_address = getattr(stop, 'booking_address', '').strip()
+        if booking_address and getattr(stop, 'booking_anchor', '') in ('hotel_departure', 'hotel_return'):
+            # User-supplied address narrows real provider results; it never
+            # supplies coordinates or makes an unmatched hotel verified.
+            normalize = lambda value: re.sub(r'[\s，,。\-（）()]', '', value)
+            expected = normalize(booking_address)
+            candidates = [p for p in candidates if len(normalize(p.get('address', ''))) >= 4
+                          and (normalize(p['address']) in expected or expected in normalize(p['address']))]
+            if not candidates:
+                stop.poi_id = ''
+                stop.location_note = '酒店名称与所填地址尚未匹配到同一真实POI，请补充完整分店名或核对地址'
+                return
         if stop.kind == 'meal':
             candidates = [p for p in candidates if not p.get('type') or '餐饮' in p['type']]
         exact = [p for p in candidates if p['name'] == query or p['id'] == stop.poi_id]
+        if len(exact) > 1 and getattr(stop, 'booking_anchor', '').startswith('transport_'):
+            transport = [p for p in exact if '火车站' in p.get('type', '') or '飞机场' in p.get('type', '')]
+            if len(transport) == 1:
+                exact = transport
         if stop.kind == 'sight' and len(exact) > 1:
             scenic = [p for p in exact if '风景名胜' in p.get('type', '')]
             if len(scenic) == 1:
@@ -387,7 +406,7 @@ class Amap:
                 pass  # A missing/invalid fare does not invalidate verified road geometry.
         return result
 
-    async def enrich(self, itinerary, mode, compare_modes=False, day_indices=None, optimize_meals=False, protected_text='', enrich_details=False):
+    async def enrich(self, itinerary, mode, compare_modes=False, day_indices=None, optimize_meals=False, protected_text='', enrich_details=False, people=1):
         routes = []
         for day_index, day in enumerate(itinerary.days):
             if day_indices is not None and day_index not in day_indices:
@@ -432,24 +451,29 @@ class Amap:
                 if self.emit:
                     await self.emit('tool', {'name': '核对地点', 'arguments': {'city': stop.city, 'name': stop.name},
                                             'summary': stop.matched_name or stop.location_note})
+            # Generic meal labels are not POIs. Resolve them into explicit real
+            # suggestions even on route refresh, including first/last meals.
+            from .locality import optimize_day_meals, resolve_unlocated_meals
+            original_meals = {s.id: s.poi_id for s in day.stops if s.kind == 'meal'}
+            await resolve_unlocated_meals(self, day, protected_text)
             if optimize_meals:
-                from .locality import optimize_day_meals
-                original_meals = {s.id: s.poi_id for s in day.stops if s.kind == 'meal'}
                 await optimize_day_meals(self, day, protected_text)
-                if enrich_details:
-                    from .place_info import enrich_place
-                    for stop in day.stops:
-                        if stop.kind == 'meal' and original_meals.get(stop.id) != stop.poi_id:
-                            stop.opening_hours_status = 'unknown'
-                            stop.opening_hours = stop.opening_hours_today = stop.information_source = ''
-                            stop.average_cost_yuan = None
-                            stop.food_reference = ''
-                            stop.information_queried_at = None
-                            await enrich_place(self, stop)
+            if enrich_details:
+                from .place_info import enrich_place
+                for stop in day.stops:
+                    if stop.kind == 'meal' and original_meals.get(stop.id) != stop.poi_id:
+                        stop.opening_hours_status = 'unknown'
+                        stop.opening_hours = stop.opening_hours_today = stop.information_source = ''
+                        stop.average_cost_yuan = None
+                        stop.food_reference = ''
+                        stop.information_queried_at = None
+                        await enrich_place(self, stop)
             for previous, current in zip(day.stops, day.stops[1:]):
                 selected_mode = 'walking' if mode == 'auto' else mode
+                missing = [s.name for s in (previous, current) if not s.location]
                 leg = RouteLeg(day_index=day_index, from_id=previous.id, to_id=current.id, mode=selected_mode,
-                               queried_at=datetime.now(timezone.utc), note='地点未定位，无法计算路线')
+                               queried_at=datetime.now(timezone.utc),
+                               note=f'尚未定位「{"、".join(missing)}」，请补充具体地点或更新路线；不会把未知交通算作免费')
                 if previous.city and current.city and city_key(previous.city) != city_key(current.city):
                     routes.append(leg.model_copy(update={'scope': 'intercity', 'note': '跨城移动，详见跨城交通；不绘制市内导航路线'}))
                     continue
@@ -489,13 +513,12 @@ class Amap:
                             await asyncio.gather(*tasks, return_exceptions=True)
                             raise
                         if mode == 'auto':
-                            available = [o for o in leg.alternatives if o.available and o.duration_s is not None]
-                            if available:
-                                order = {'walking': 0, 'transit': 1, 'bicycling': 2, 'taxi': 3, 'driving': 4}
-                                fastest = min(available, key=lambda o: (o.duration_s, order[o.mode]))
-                                for key, value in fastest.model_dump().items():
+                            from .local_transport_policy import recommend_local
+                            recommended, reason = recommend_local(leg.alternatives, current.city, people)
+                            if recommended:
+                                for key, value in recommended.model_dump().items():
                                     setattr(leg, key, value)
-                                leg.selection_reason = '自动选择：已查询可用方案中地图通行时间最短；未计入接口以外的候车、停车取车等耗时。可逐段手动更换。'
+                                leg.selection_reason = reason
                         if not leg.available and mode == 'transit' and leg.failure_code == 'no_route':
                             walking = next((o for o in leg.alternatives if o.mode == 'walking' and o.available
                                             and o.distance_m is not None and o.distance_m <= 1500), None)
@@ -507,7 +530,7 @@ class Amap:
                     leg.failure_code = 'missing_location'
                 routes.append(leg)
                 if self.emit:
-                    await self.emit('tool', {'name': {'auto': '比较并选取最快市内交通', 'walking': '查询步行路线', 'driving': '查询驾车路线',
+                    await self.emit('tool', {'name': {'auto': '比较并推荐市内交通', 'walking': '查询步行路线', 'driving': '查询驾车路线',
                         'taxi': '查询打车道路与出租车估价', 'transit': '查询公交地铁路线', 'bicycling': '查询骑行路线'}[mode],
                         'arguments': {'from': previous.name, 'to': current.name},
                         'summary': f'{leg.distance_m} 米 · {round(leg.duration_s / 60)} 分钟' if leg.available else leg.note})

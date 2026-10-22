@@ -1,5 +1,7 @@
 # 安装与启动
 
+> 2026-10-22 合并源码版：普通旅行新增仓颉调整与酒店／已订交通补录。历史发布的便携包仍是原发布内容，本次未重新打包或发布。当前这台电脑的合并版使用端口 **7868**；下文7862是源码默认值。
+
 选择下面一种方式即可。推荐使用便携版；两种方式都需要网络连接，并填写大模型和高德地图的 API 配置。
 
 ## 一、便携版启动
@@ -68,6 +70,31 @@
 ```powershell
 .\restart.bat
 ```
+
+本机同时运行多个版本时，在当前 PowerShell 中指定端口，不必改动任何密钥文件：
+
+```powershell
+Set-Location -LiteralPath D:\cangjie\zhengkaiyang
+$env:PORT = '7868'
+.\start.bat
+```
+
+同一窗口中执行 `restart.bat` 会继续使用该端口。不要将旧版的环境、数据库或配置覆盖到本目录。
+
+### 4. 仓颉调整引擎（源码版）
+
+本机已用现有仓颉1.0.5 SDK重新编译，普通旅行可使用真实原生引擎。换电脑后，使用自己已安装的 Windows x64 SDK，在项目根目录执行以下命令；将示例路径换成实际 SDK 目录：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File cangjie\build.ps1 -SdkRoot 'D:\your-sdk\cangjie'
+powershell -NoProfile -ExecutionPolicy Bypass -File cangjie\build_journey_planner.ps1 -SdkRoot 'D:\your-sdk\cangjie'
+.\.venv\Scripts\python.exe tools\check_cangjie.py
+.\.venv\Scripts\python.exe tools\check_constraint_planner.py
+```
+
+编译输出在 `cangjie/bin/`，不提交二进制或 SDK。`VALIDATOR_BACKEND=auto` 默认自动检测共同校验器；有限搜索由独立原生规划器执行，没有用 Python 冒充搜索的回退。未编译时普通生成仍可使用 Python 校验，调整预览会明确提示原生引擎不可用。
+
+无需密钥的代码回归：`.\.venv\Scripts\python.exe -m pytest -q`。该入口会禁用dotenv、外网和密钥，并使用临时数据库。`tools/serve_constraint_demo.py --port 7869` 可启动独立的合成验收；其中地点、价格、道路、语言解析为人工测试数据，不能当作真实出行或在线效果证明。
 
 ## 填写 API 配置
 

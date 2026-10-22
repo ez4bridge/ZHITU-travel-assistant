@@ -55,7 +55,7 @@ def test_five_city_limit_applies_to_both_input_formats():
         TripRequest(start_date='2026-10-21', destination='成都→重庆', destinations=[{'city': '重庆'}, {'city': '成都'}])
 
 
-def test_legacy_six_city_history_readable_but_cannot_be_revised(monkeypatch, tmp_path):
+def test_legacy_six_city_history_readable_but_cannot_be_revised(monkeypatch, tmp_path, fixture_trip_clock):
     import backend.main as main
     request, itinerary, routes = stay_case(None)
     plan = PlanRecord(id='six-old', created_at=datetime.now(timezone.utc), request=request, itinerary=itinerary,
@@ -123,7 +123,7 @@ def test_structured_preferences_survive_storage_and_recheck(tmp_path):
     assert validate_core(normalized_input(restored.request, restored.itinerary, restored.routes)) == result
 
 
-def test_structured_request_flows_through_api_and_reports_preference(monkeypatch, tmp_path):
+def test_structured_request_flows_through_api_and_reports_preference(monkeypatch, tmp_path, fixture_trip_clock):
     import backend.main as main
     from backend.amap import Amap
     from backend.validation import Validator

@@ -200,7 +200,7 @@ async def test_enrichment_never_uses_walking_between_cities():
 
 
 @pytest.mark.asyncio
-async def test_multicity_generate_revise_and_history_keep_independent_costs(monkeypatch, tmp_path):
+async def test_multicity_generate_revise_and_history_keep_independent_costs(monkeypatch, tmp_path, fixture_trip_clock):
     import httpx
     import backend.main as main
     from backend.validation import Validator
@@ -208,7 +208,8 @@ async def test_multicity_generate_revise_and_history_keep_independent_costs(monk
     monkeypatch.setattr(main, 'store', Store(tmp_path / 'national.sqlite3'))
     monkeypatch.setattr(main, 'validator', Validator())
     async def fake_generate(trip, amap, emit, previous=None, instruction='', rail=None, weather=None, weather_by_city=None):
-        assert amap.cities == ['上海', '杭州', '苏州']
+        # The origin is also needed to resolve departure station/airport anchors.
+        assert amap.cities == trip.journey_cities
         itinerary = original.model_copy(deep=True)
         if previous:
             itinerary.transfers[0].unit_cost = Decimal('50')

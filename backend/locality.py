@@ -4,6 +4,7 @@ import re
 from functools import partial
 
 from .models import city_key
+from .administrative import cached_division, contains_place
 
 
 def separation(a, b):
@@ -13,7 +14,151 @@ def separation(a, b):
     return 6371000 * math.hypot(x, y)
 
 
+def _place_in_scope(amap, city, place):
+    # Reuse the provider-resolved administrative identity. County POIs report
+    # their parent city in cityname, so string city matching would reject them.
+    division = cached_division(amap, city)
+    if division:
+        return contains_place(division, place)
+    reported = {city_key(str(place.get(field, ''))) for field in ('cityname', 'adname')}
+    return city_key(city) in reported
+
+
+def meal_area_query(meal):
+    """Extract an explicit dining area, never a made-up restaurant name."""
+    text = (meal.area_name or meal.place_name or meal.name).strip()
+    text = re.sub(r'^(?:早餐|午餐|晚餐|用餐)[（(](.+)[）)]$', r'\1', text)
+    text = re.sub(r'^(?:返回|回到|前往|在|到)', '', text)
+    # Meal activity titles often concatenate a real district with cuisine/time.
+    text = re.split(r'附近|周边|一带|朝鲜族|东北菜|俄式|韩式|风味|地道|本地菜|早餐|午餐|晚餐|用餐|就餐', text, maxsplit=1)[0]
+    text = re.sub(r'市区$', '市', text)
+    if text in ('', '市', '市区', '城区', '附近', '当地', '园区内', '景区内', '自由选择', '自行选择'):
+        return ''
+    return text[:60]
+
+
+def _nearby_meal_anchors(day, index, city):
+    anchors = []
+    # Do not jump across an intervening other-city activity to find an anchor.
+    for indexes in (range(index - 1, -1, -1), range(index + 1, len(day.stops))):
+        for position in indexes:
+            stop = day.stops[position]
+            if city_key(stop.city or city) != city_key(city):
+                break
+            if stop.location_status == 'verified' and stop.location and stop.poi_id:
+                anchors.append(stop)
+                break
+    return anchors
+
+
+async def resolve_unlocated_meals(amap, day, protected_text=''):
+    """Choose real nearby restaurants for generic placeholders, including day ends.
+
+    Each placeholder uses at most one area lookup, two nearby lookups and three
+    road candidates. Area centres only seed a search; only a real restaurant POI
+    can become the meal endpoint. Specific ambiguous restaurant branches stay
+    unresolved rather than being silently replaced.
+    """
+    for index, meal in enumerate(day.stops):
+        if meal.kind != 'meal' or meal.location_status == 'verified':
+            continue
+        generic = (meal.location_behavior in ('area', 'unlocated')
+                   or bool(re.search(r'附近|周边|一带|自行选择', meal.place_name or meal.name)))
+        if not generic or (meal.place_name and meal.place_name in protected_text):
+            continue
+        try:
+            city = amap.canonical_city(meal.city)
+            anchors = _nearby_meal_anchors(day, index, city)
+            query = meal_area_query(meal)
+            source_anchor = None
+            if query:
+                # Reuse a currently verified area before spending another query.
+                source_anchor = next((s for s in anchors if query in
+                    (s.name, s.place_name, s.matched_name, s.area_name)), None)
+                if source_anchor is None and city_key(query) == city_key(city) and anchors:
+                    source_anchor = anchors[0]
+                if source_anchor is None:
+                    found = await amap.search(query, city) if len(amap.cities) > 1 else await amap.search(query)
+                    exact = [p for p in found if p['name'] == query and '餐饮' not in p.get('type', '')]
+                    scenic = [p for p in found if query in p['name'] and
+                              ('风景名胜' in p.get('type', '') or '特色商业街' in p.get('type', ''))]
+                    civic = [p for p in found if p['name'] == query + '人民政府']
+                    # A unique administrative POI is only a nearby-search anchor.
+                    candidates = (exact if len(exact) == 1 else scenic if len(scenic) == 1
+                                  else civic if len(civic) == 1 else [])
+                    if not candidates:
+                        meal.location_note = '餐饮区域尚未明确定位，请补充具体餐厅或片区名称；未用附近其他城区替代'
+                        continue
+                    source_anchor = candidates[0]
+            elif anchors:
+                source_anchor = anchors[0]
+            if source_anchor is None:
+                meal.location_note = '尚无已核实的同城邻近地点，请先明确餐厅或餐饮片区'
+                continue
+            point = source_anchor['location'] if isinstance(source_anchor, dict) else source_anchor.location
+            params = {'location': ','.join(map(str, point)), 'types': '050000', 'radius': 1500,
+                      'sortrule': 'distance', 'offset': 3, 'page': 1, 'extensions': 'base'}
+            if meal.food_recommendations:
+                params['keywords'] = meal.food_recommendations[0][:40]
+            data = await amap.request('/v3/place/around', params)
+            if not data.get('pois') and 'keywords' in params:
+                data = await amap.request('/v3/place/around', {k: v for k, v in params.items() if k != 'keywords'})
+            used = {s.poi_id for s in day.stops if s.kind == 'meal' and s.location_status == 'verified'}
+            candidates = []
+            for item in data.get('pois', [])[:3]:
+                if (not item.get('id') or not item.get('name') or item['id'] in used
+                        or not (str(item.get('typecode', '')).startswith('05') or '餐饮' in str(item.get('type', '')))
+                        or not _place_in_scope(amap, city, item)):
+                    continue
+                try:
+                    candidate_point = tuple(map(float, item.get('location', '').split(',')))
+                    if (len(candidate_point) != 2 or not all(math.isfinite(v) for v in candidate_point)
+                            or not (-180 <= candidate_point[0] <= 180 and -90 <= candidate_point[1] <= 90)):
+                        continue
+                except (ValueError, TypeError, AttributeError):
+                    continue
+                # Validate provider road geometry, not the radial filter distance.
+                try:
+                    road = await amap.route_in_city(point, candidate_point, 'driving', city)
+                except RuntimeError as error:
+                    if getattr(error, 'code', '') in ('map_auth', 'map_ip_limit'):
+                        raise
+                    continue
+                if road.get('distance_m') is None or len(road.get('polyline', [])) < 2:
+                    continue
+                candidates.append((road['distance_m'], item, candidate_point))
+            if not candidates:
+                meal.location_note = '餐饮片区已定位，但未取得道路可达的具体餐厅；请补充餐厅或稍后更新路线'
+                continue
+            distance, item, point = min(candidates, key=lambda value: (value[0], value[1]['id']))
+            old_name = meal.name
+            meal.name = meal.place_name = meal.matched_name = item['name']
+            meal.poi_id, meal.location, meal.location_status = item['id'], point, 'verified'
+            meal.address = item.get('address') if isinstance(item.get('address'), str) else ''
+            meal.area_name = meal.area_poi_id = ''
+            meal.location_behavior = 'poi'
+            meal.location_note = '高德真实餐饮POI与道路已查询；这是就近候选，营业、菜品和预约仍待核实'
+            meal.description = (f'将「{old_name}」落实为可更换的具体餐厅建议。' +
+                (f'按明确餐饮片区「{query}」查找。' if query else '按相邻已核实活动就近查找。') +
+                '最终接驳耗时与方式见下方路线；不表示已预订或已确认营业。')
+            if amap.emit:
+                await amap.emit('tool', {'name': '落实餐饮地点', 'arguments': {'city': city, 'activity': old_name},
+                                       'summary': meal.name + '：真实餐厅POI及道路已查询，营业待核实'})
+        except (RuntimeError, ValueError) as error:
+            if getattr(error, 'code', '') in ('map_auth', 'map_ip_limit'):
+                raise
+            meal.location_note = '具体餐厅核实未完成，保留餐饮需求；请补充明确地点或稍后更新路线'
+
+
 def prepare_accommodation(itinerary, trip, only_day=None):
+    if trip.confirmed_hotels:
+        from .bookings import apply_hotel_anchors, validate_bookings
+        validate_bookings(trip)
+        for index, day in enumerate(itinerary.days):
+            if only_day is None or index == only_day:
+                day.stops = [s for s in day.stops if s.kind != 'hotel' or s.booking_anchor]
+        apply_hotel_anchors(itinerary, trip, only_day)
+        return
     # Old summaries can still assert a booked hotel after its route anchors disappear.
     if not trip.confirmed_hotel.strip() and re.search(r'住宿|酒店|宾馆', itinerary.summary):
         itinerary.summary = re.sub(r'[^。！？\n]*(?:住宿|酒店|宾馆)[^。！？\n]*[。！？]?', '', itinerary.summary)
@@ -104,7 +249,7 @@ async def optimize_day_meals(amap, day, protected_text=''):
                         continue
                     if str(item.get('typecode', '')).startswith('05') is False and '餐饮' not in str(item.get('type', '')):
                         continue
-                    if item.get('cityname') and city_key(str(item['cityname'])) != city_key(city):
+                    if not _place_in_scope(amap, city, item):
                         continue
                     try:
                         point = tuple(map(float, raw.split(',')))
