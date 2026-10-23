@@ -1983,8 +1983,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 3515,
-      "sha256": "0ccc4db760374bcf056b6c74b29f6a2d9306b0405f36b2c1d61e54cf7259f280"
+      "bytes": 3577,
+      "sha256": "17e514e83aada7d012ea42dcea2f8972b42ff401d3340ee79c7f91be79c03c48"
     },
     {
       "path": "requirements-dev.txt",
