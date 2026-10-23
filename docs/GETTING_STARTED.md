@@ -2,23 +2,25 @@
 
 选择以下一种方式。两种方式均需要网络连接和有效的 API 配置。
 
-## 一、便携版启动
+## 一、便携快速启动版（推荐）
 
 适用于 Windows 10／11 x64，无需另外安装 Python、Node 或仓颉 SDK。
 
-1. 完整解压便携版压缩包，保留目录结构。
-2. 双击“配置API.bat”，填写根目录的 `.env.local` 并保存。也可以把已有配置文件拖到“启动漫游.exe”上导入。
-3. 双击“启动漫游.exe”，等待浏览器打开。请使用启动窗口显示的访问地址。
+1. **下载与解压。** 到[最新发布页](https://github.com/ez4bridge/ZHITU-travel-assistant/releases/latest)下载 **travel-assistant-windows-x64.zip**，也可[直接下载便携版](https://github.com/ez4bridge/ZHITU-travel-assistant/releases/latest/download/travel-assistant-windows-x64.zip)。完整解压后，进入能看到“启动漫游.exe”的程序目录，保留所有文件和子目录。
+2. **填写配置。** 双击“配置API.bat”，填写根目录的 `.env.local` 并保存。公开下载包的密钥为空；已预填有效配置时可跳过。也可以把已有配置文件拖到“启动漫游.exe”上导入。
+3. **启动使用。** 双击“启动漫游.exe”，等待本地服务启动并自动打开浏览器。请使用启动窗口显示的访问地址。
 
 结束使用时双击“停止运行.bat”；修改配置后双击“重启运行.bat”。便携版包含研学资料、检索资源与仓颉运行程序，无需另外恢复。
 
-## 二、源码版启动
+## 二、源码版（安装后启动）
 
-需要 Windows x64、Python 3.11 和网络连接。以下操作均在解压后的源码根目录执行。
+GitHub 仓库的 **Code → Download ZIP** 和发布页中的 **Source code** 下载的是源码版，也可[直接下载当前源码](https://github.com/ez4bridge/ZHITU-travel-assistant/archive/refs/heads/main.zip)。源码版通过下方的安装脚本准备环境，再使用 start.bat 启动。
+
+需要 Windows x64、Python 3.11 和网络连接。请预先安装 Python 3.11 x64，并在安装时勾选“Add python.exe to PATH”。安装脚本会准备 Node 和应用依赖，无需另装仓颉 SDK。以下操作均在解压后的源码根目录执行。
 
 1. **安装。** 双击 `setup.bat`，等待依赖与页面准备完成。随包已包含仓颉运行程序及其依赖，无需安装 SDK 或重新编译。
 2. **配置。** 打开根目录的 `.env.local`，填写下方 API 信息并保存。随包密钥均为空，安装程序不会覆盖已有配置。
-3. **恢复研学资源。** 如需使用历史研学，将独立资源包解压到与源码目录并列的位置，停止应用后在 PowerShell 中执行：
+3. **恢复研学资源。** 如需使用历史研学，先[下载研学资源包](https://github.com/ez4bridge/ZHITU-travel-assistant/releases/download/v1.0.1/travel-assistant-resources.zip)。解压后，将直接包含 MANIFEST.json、study 和 rag 的资源目录命名为 travel-assistant-resources，与源码文件夹并列放置。停止应用后在源码根目录打开 PowerShell，执行：
 
    ```powershell
    .\.venv\Scripts\python.exe tools\restore_resources.py ..\travel-assistant-resources

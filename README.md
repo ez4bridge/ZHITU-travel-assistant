@@ -4,7 +4,7 @@
 
 ## 1. 开始使用
 
-可选择 Windows 便携版或源码版。填写根目录的 `.env.local` 后启动，详细步骤见 **[安装与启动指南](docs/GETTING_STARTED.md)**。
+推荐 **[下载 Windows 便携快速启动版](https://github.com/ez4bridge/ZHITU-travel-assistant/releases/latest/download/travel-assistant-windows-x64.zip)**，完整解压、填写 `.env.local` 后双击“启动漫游.exe”。源码版可通过仓库的 **Code → Download ZIP** 获取，按安装脚本准备环境后启动。两种方式的详细步骤见 **[安装与启动指南](docs/GETTING_STARTED.md)**。
 
 ![知途首页](docs/images/home.png)
 

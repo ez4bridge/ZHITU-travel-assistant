@@ -618,8 +618,8 @@
     },
     {
       "path": "docs/GETTING_STARTED.md",
-      "bytes": 4725,
-      "sha256": "926cce21187824ea530ea79cd7aea8cd292b4052d02a18de82842f9573a92015"
+      "bytes": 5948,
+      "sha256": "9ca3cc8b69578ab72204f2ed2299a0ed8420962925630dce55ed5cc0ae14dca3"
     },
     {
       "path": "docs/images/home.png",
@@ -1983,8 +1983,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 3577,
-      "sha256": "17e514e83aada7d012ea42dcea2f8972b42ff401d3340ee79c7f91be79c03c48"
+      "bytes": 3840,
+      "sha256": "992b8556d5fe947bf22c63d782b05517e7fdc31f0dd7a0ce33fe122c2923e2c2"
     },
     {
       "path": "requirements-dev.txt",
