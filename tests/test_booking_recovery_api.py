@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from backend import booking_routes, main
 from backend.models import ConfirmedHotel, Expense
 from test_booking_route_recovery import map_with_failures, model_answer, point
-from test_constraint_replan import sample_plan
+from plan_samples import sample_plan
 from test_merged_bookings import booking_body, setup_booking
 
 

@@ -1,3 +1,3 @@
-# Keep release checksums and native source fingerprints stable across platforms.
+# Keep release checksums stable across platforms.
 * -text
 third_party/mcp-server-12306/** -text

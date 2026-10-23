@@ -13,8 +13,8 @@ from backend import booking_routes
 from backend.booking_routes import preview_bookings
 from backend.models import (BookedTransport, CityTransfer, ConfirmedHotel, DayPlan, DestinationStay,
                             Expense, Itinerary, Issue, RouteLeg, Stop)
-from test_constraint_replan import sample_plan
-from test_constraint_city_scope import mixed_plan
+from plan_samples import sample_plan
+from plan_samples import mixed_plan
 from test_merged_bookings import booking_body, setup_booking
 
 

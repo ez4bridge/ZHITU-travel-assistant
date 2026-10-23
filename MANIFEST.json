@@ -13,13 +13,23 @@
     },
     {
       "path": ".gitattributes",
-      "bytes": 130,
-      "sha256": "f720067da66de4c07e557aa572f35fac0482011f7dc38fad5bc245c8b8261431"
+      "bytes": 99,
+      "sha256": "b82e9eae0bfa53c3042b2b3716d5d0d248ee419666beaff9820e340d1c59ab3b"
     },
     {
       "path": ".gitignore",
-      "bytes": 181,
-      "sha256": "ca7cdfc5a82f3ed97733d7343d1339a715c0ba4e6ea541691b5a99b175fb012d"
+      "bytes": 149,
+      "sha256": "6b3cfb862793af78e4d8f6e66655c73e88f2d85bc0cebc91cbaf5b7cacad3060"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 9247,
+      "sha256": "f0dade5c933769bfb43d75efb9517d42a0e85eb8253e8b8064376fdd58feef45"
+    },
+    {
+      "path": "README.md",
+      "bytes": 4684,
+      "sha256": "ba3c196f528c1216da2902850a1ee7c34e022dd1da61109a93c0a18f243cb5a0"
     },
     {
       "path": "backend/__init__.py",
@@ -35,6 +45,11 @@
       "path": "backend/agent.py",
       "bytes": 23754,
       "sha256": "0d003ace68112199771d1d3771c28e384353abe029a93be9e2960502652f0497"
+    },
+    {
+      "path": "backend/ai_revision.py",
+      "bytes": 17355,
+      "sha256": "52303ababbc255983917d4b172ab4dec68aa5bdc9154db2159340098472b1875"
     },
     {
       "path": "backend/amap.py",
@@ -78,38 +93,23 @@
     },
     {
       "path": "backend/config.py",
-      "bytes": 3360,
-      "sha256": "eb1c3850e13d0b48acfc668ad8bdb87f7f604fd7ff2ba9319bb8292429ec36d4"
-    },
-    {
-      "path": "backend/constraint_bridge.py",
-      "bytes": 12582,
-      "sha256": "f2b955f15aeb97431a02dae217bffed17c48cc4d4d7ea231e78cf5c8c17ac8eb"
-    },
-    {
-      "path": "backend/constraint_intent.py",
-      "bytes": 20591,
-      "sha256": "f354127599896f619853d0e988eeca7245ce951907ee5583006b842e80c24c5c"
+      "bytes": 3296,
+      "sha256": "783d83c50ce2aa2004ff47096377cf6adc28529ef906bc2eb858c7c923b54b77"
     },
     {
       "path": "backend/constraint_models.py",
-      "bytes": 5641,
-      "sha256": "97adb8bf2821115c0866b3bf773964ed16f0a0ba6fe50f80b34b2de574ea48a3"
-    },
-    {
-      "path": "backend/constraint_reference.py",
-      "bytes": 7771,
-      "sha256": "1394ebc1594e928c6e2da773043f81daeb28ce158c66b67d36d6fefc489803bb"
+      "bytes": 5645,
+      "sha256": "ce924aa7c7e7914b316591acda086f94649a9b36cf509090edf90d13e7b795e0"
     },
     {
       "path": "backend/constraint_replan.py",
-      "bytes": 58077,
-      "sha256": "b5f8e850c7cd50b07b14b2a2b6c4638820b492872a8c86027462a65aee2573fa"
+      "bytes": 2409,
+      "sha256": "c584ccba87d3d247ba2be8474c5e895bf2edc0689b2e8c140985c4da7c46cada"
     },
     {
       "path": "backend/constraint_routes.py",
-      "bytes": 4860,
-      "sha256": "295df8b144fd8aabf84566015ad140eac653fcd2ab3664350d4170982c756912"
+      "bytes": 1367,
+      "sha256": "598461eab34f678f2ca5196517f7ff90ffba46a0d90b073ec195e9fe3a068dab"
     },
     {
       "path": "backend/constraint_storage.py",
@@ -153,8 +153,8 @@
     },
     {
       "path": "backend/main.py",
-      "bytes": 43122,
-      "sha256": "979f0e29b8778b3dc4d981ee8dfdfe2bda20c330d3350211fea308f9b635f37f"
+      "bytes": 42985,
+      "sha256": "c2999aef2aa4566064a436bc439c783cc5fb4db0b8b272ec4b306c4810e1bcc9"
     },
     {
       "path": "backend/map_rate_limit.py",
@@ -197,14 +197,9 @@
       "sha256": "216a9b58e398ccfbc923bae97387698032088f01ff32a3f24fe110cc6bcee4d9"
     },
     {
-      "path": "backend/planning_conversation.py",
-      "bytes": 25342,
-      "sha256": "52a76368e71fa4c23d02fc0ed491824b68f38337952ac786d11698545f54baa4"
-    },
-    {
       "path": "backend/planning_conversation_routes.py",
-      "bytes": 2501,
-      "sha256": "514cb7d1412cc731ff100a8d45dc5161da3a5b030a4ce02dc8bc466fbd2021ae"
+      "bytes": 3186,
+      "sha256": "ed1ead5c3ef190bda4c16d2336ed46f04fd538d33ea92ee04a1f1306aae31567"
     },
     {
       "path": "backend/preparation.py",
@@ -273,8 +268,8 @@
     },
     {
       "path": "backend/validation.py",
-      "bytes": 16345,
-      "sha256": "f6856fb0fc3bf7a97655d5469ca4894112e0181d7fecf3ba97d5c06461607e30"
+      "bytes": 12390,
+      "sha256": "8ee92ba7b816461b24daf9193a2c8b19700d0f12decf4b6aae6eb1baca4d8ad2"
     },
     {
       "path": "backend/weather.py",
@@ -282,344 +277,9 @@
       "sha256": "f106663becab72c2a121cb3d09f7abef20366247728e2d721378b2679c54b33f"
     },
     {
-      "path": "cangjie/bin/default.cjo",
-      "bytes": 61368,
-      "sha256": "e25bd6e237f3ffe638f5f13d60507a369edd7e82c6648b4703a031bbce4cbc40"
-    },
-    {
-      "path": "cangjie/bin/journey_planner.build.json",
-      "bytes": 213,
-      "sha256": "d7f98b1f33d06ab7c5ac4a94f9110b281bfa2a703f552c30a37b194ba105b26e"
-    },
-    {
-      "path": "cangjie/bin/journey_planner.exe",
-      "bytes": 3342336,
-      "sha256": "829e99f1326f0cfbabbe1fcdad4ca105e208f0c427f40ecc39862122fcf6f73b"
-    },
-    {
-      "path": "cangjie/bin/libboundscheck.dll",
-      "bytes": 50120,
-      "sha256": "d3a670e6f14dd2acbeaf119bb15e8b8f196164992999b10344b775e2d4bed66c"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-dynamicLoader-opensslFFI.dll",
-      "bytes": 195016,
-      "sha256": "2efec20c7e5e0c9a95f877aa825a5b9a985a02e5eab20ecb738e456b37e77fa8"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-runtime.dll",
-      "bytes": 1212360,
-      "sha256": "14ff79293be6328393a0bee5d3d69b3023f3ba1bcac7cebda2dceb35b98cac6a"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-argopt.dll",
-      "bytes": 143304,
-      "sha256": "97c885cad46761819199851e8f20766c383e923702bca564b5ac755b842ecd44"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-ast.dll",
-      "bytes": 16777160,
-      "sha256": "ec47843b77abafab30a0cc3bbc2253067d88c66842451a8c0edcae3ee0710984"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-binary.dll",
-      "bytes": 94152,
-      "sha256": "1abb7ecd5e3e2a61f4c4b159cbf0a0f34eb86ca325abc8776c8f7b76a4880420"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-collection.concurrent.dll",
-      "bytes": 199624,
-      "sha256": "8782cad66427a81a11d066c3445e2c2236248ef3bc62a27c8a7c222350bdcb0f"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-collection.dll",
-      "bytes": 643528,
-      "sha256": "98d5447193f99c3d6d9d9d35fdf57612dd63fe792e20fcbeb4dbdd5f820b38db"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-console.dll",
-      "bytes": 77768,
-      "sha256": "e0db7beb7df262e3740b1b98e952af3f4e75b526ead2da35f82ecc80bcb864e1"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-convert.dll",
-      "bytes": 189896,
-      "sha256": "c9c5eea3732a12246414c8264941ee2e0c73f12e721ab5088bd82cb621638272"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-core.dll",
-      "bytes": 658888,
-      "sha256": "70c0308b40388b508cdea99e666d760e9002dd179431190c660f745308466eab"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-crypto.cipher.dll",
-      "bytes": 31176,
-      "sha256": "cb32f0f281a506d451b501cf0a6a7a4cfab2442ef7e209994ba52793cba3a8b7"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-crypto.digest.dll",
-      "bytes": 34248,
-      "sha256": "15c874e7f3fbc96efc8f0bc56b0864d7d0d5a010a267bf9a09de94c9f696caf6"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-crypto.dll",
-      "bytes": 27592,
-      "sha256": "a1323cb74866d43af3778ea829b3b3abe92e4dad72c0e9433d7803cd1809a04f"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-database.dll",
-      "bytes": 27592,
-      "sha256": "8634467ccef0d1ebd8f70fbd1a58a37b2dae7fda8be95eb58095f7ebd2f4fcee"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-database.sql.dll",
-      "bytes": 208328,
-      "sha256": "6baeb809fad856c4bf0f54a05fd02253c07871594034ba0a963defdd3ddaaa2e"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-deriving.api.dll",
-      "bytes": 290760,
-      "sha256": "313216b299dfae2cf2a4fbceaf1a02f54705bb4fd288ce8546c4696f0094ebde"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-deriving.builtins.dll",
-      "bytes": 286664,
-      "sha256": "e8d58e6bced1ada046b01a114750eed99846f34c618f80cdcbea2744a3cc2355"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-deriving.dll",
-      "bytes": 118728,
-      "sha256": "303ca9533413dbfcecc956957e6b2e736c4c7363d0f558c22b36d0e3ab3c3878"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-deriving.impl.dll",
-      "bytes": 397256,
-      "sha256": "452370946a5cac0bbffa48f71542566f4f9002083c0180d8fdb003422b13bc15"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-deriving.resolve.dll",
-      "bytes": 202184,
-      "sha256": "cb0089065a74e6316a5eff8770cb12f90ca2c78751f98e27e06768fe20702285"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-env.dll",
-      "bytes": 119752,
-      "sha256": "be2eaa85c65f41b0db43f1076adeb6a44321fc9a18c03cedd869de511f55ebaf"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-fs.dll",
-      "bytes": 205768,
-      "sha256": "336b575abc47141389647953e1f82a541279d87cde1a25dd07357d1ed95c8ed8"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-io.dll",
-      "bytes": 133576,
-      "sha256": "eaa3b697a604bb4bfb31cd23aaf50eb72931f0c2262ff2ec461b2f31b1725d0a"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-math.dll",
-      "bytes": 299464,
-      "sha256": "5690ebcbbcb7f76cf6e8facc683e2c168687182cd1eb67fea4496f049a3208c4"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-math.numeric.dll",
-      "bytes": 416200,
-      "sha256": "95eac4f9213c990abaadee91602cd3440126d16f2558bd0c2f4193f92a9d8a91"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-net.dll",
-      "bytes": 783304,
-      "sha256": "06fdf6de1ac6cec3ad051fc5eed53790e9ec8c3efd88998d2b5d68af1b008f21"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-objectpool.dll",
-      "bytes": 34760,
-      "sha256": "9149278e74aa456e48eb2747b707606c11aad081e95d14b50c954cca1d14856b"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-overflow.dll",
-      "bytes": 320456,
-      "sha256": "9764592fd5f9a5ff0b7b5304a0770de1677cb14864d6c0b6b91c8c47af275c34"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-posix.dll",
-      "bytes": 51656,
-      "sha256": "32e47180538dfb1f155405f4829600f07d833d0956c43d86a174afb3a5ad7230"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-process.dll",
-      "bytes": 179656,
-      "sha256": "a432320add8ea7d92251b23418842cc8343780385c4c9a918b787d44a9beca4e"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-random.dll",
-      "bytes": 55240,
-      "sha256": "f54e7a76d877fb9699544f0f13ce032fc135aa813003896ed7ab26073fb55077"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-ref.dll",
-      "bytes": 35784,
-      "sha256": "aec8fcca7ac2e5fc17412a349ac88eb9743b03e4de4fbd76c6aeb286fd169c26"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-reflect.dll",
-      "bytes": 493000,
-      "sha256": "0855b08e3c16455a92ad59fba917764893dd0baa3f0acde2ddbb9d7d308060df"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-regex.dll",
-      "bytes": 133064,
-      "sha256": "321fd14f0b9d4d53fdd50c6e5388ae6c88ee894623904f7cc21a4eb856ef24af"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-runtime.dll",
-      "bytes": 43976,
-      "sha256": "73a5c08fe66200d9d456913da675b2d6867b441f33c79c3d1559022b89233628"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-sort.dll",
-      "bytes": 274376,
-      "sha256": "ce01045b0476c4a6c087c2a9244c0e78b426d5d34dbcc4b6eeb7468611df12cd"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-sync.dll",
-      "bytes": 237000,
-      "sha256": "8ebb6d6dc06e373844a06dcdbabb2732c298c819b3b8c293eff9a36279379b57"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-time.dll",
-      "bytes": 297416,
-      "sha256": "32c18b5a227bad937f57ad7a7abab4489c3bf1c121d5459d22b418b4d9e9128f"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-unicode.dll",
-      "bytes": 206280,
-      "sha256": "46830f0a3997ca4bc92014a7b4af722cb7e480a85388edd0b1c1aa2be5e9000a"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-unittest.common.dll",
-      "bytes": 384456,
-      "sha256": "cb29aee99651a9c0291364c0b25d7c35692a23563a5283c11c8f5c50b3bf53c3"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-unittest.diff.dll",
-      "bytes": 231880,
-      "sha256": "6072d46726811e90164bb729c52dc87196dca2e793f3cd2b84de76c4c8021fc7"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-unittest.dll",
-      "bytes": 3025352,
-      "sha256": "c7faeeafd924de6cfffcdffb361b04ca5a3479b8b9f83499c1d559b1de0a98ad"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-unittest.mock.dll",
-      "bytes": 623048,
-      "sha256": "81ebb3fcb21961fb0f2675e517d114e83ce4f5160506353cc624d903c4149d09"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-unittest.mock.internal.dll",
-      "bytes": 81864,
-      "sha256": "47e147c686e845128f5845f46a24618c29e1a5136c8daf4137cc2905ef4eee81"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-unittest.mock.mockmacro.dll",
-      "bytes": 128456,
-      "sha256": "4515fc4a9f03948d1058e82c69cb3721b39048344c1e9a7ce9495a638925111c"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-unittest.prop_test.dll",
-      "bytes": 1001928,
-      "sha256": "8f1ff1348bb8adc273ec4eb4ddccd87dd946225b39800f9c8cc5c9303539c675"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std-unittest.testmacro.dll",
-      "bytes": 1091016,
-      "sha256": "90896d17f67c8c6f58798780607d9ffbdaf3d99a662eff0fa68e960e2ac90ad4"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-std.dll",
-      "bytes": 27592,
-      "sha256": "5f79957aa0b2d08d87a46dcbd94aaa3cbad1e0e9854699d9b08851c2b9812f6d"
-    },
-    {
-      "path": "cangjie/bin/libcangjie-trace.dll",
-      "bytes": 30664,
-      "sha256": "a3d1a796abb8b6237521181585200813fff514d7bd75568b5f92b8aacec8f4e9"
-    },
-    {
-      "path": "cangjie/bin/libpcre2-8.dll",
-      "bytes": 466888,
-      "sha256": "a268c42af0ac6321e5e0d4482c155ba40d34079e75261252730d033fe04ab271"
-    },
-    {
-      "path": "cangjie/bin/libsecurec.dll",
-      "bytes": 50120,
-      "sha256": "d3a670e6f14dd2acbeaf119bb15e8b8f196164992999b10344b775e2d4bed66c"
-    },
-    {
-      "path": "cangjie/bin/Open_Source_Software_Notice.docx",
-      "bytes": 54353,
-      "sha256": "2e28b498d486417fa02aebef0c8ed7d736a8fd6cd265d93288de446c498e5498"
-    },
-    {
-      "path": "cangjie/bin/SDK-LICENSE",
-      "bytes": 12396,
-      "sha256": "c6b19ceadc94d277930cd8a91ea324c73f322e22561a58457e92962b1ffb110e"
-    },
-    {
-      "path": "cangjie/bin/validator.exe",
-      "bytes": 3190784,
-      "sha256": "65bf48948751da0d45f47b7229a8c1be95808f72044c2dcbbe5ea7eae472d836"
-    },
-    {
-      "path": "cangjie/build.ps1",
-      "bytes": 1163,
-      "sha256": "06097f6b3f7ddea31ecce8b1d8b79ef8e3c15b0dd4b6c2567c9762fe0b281c9f"
-    },
-    {
-      "path": "cangjie/build_journey_planner.ps1",
-      "bytes": 1840,
-      "sha256": "cf5c63b1a6d7ab8e639abfb74590cb21401aa98808aab5b46d73f570504d7c44"
-    },
-    {
-      "path": "cangjie/fixtures.json",
-      "bytes": 49944,
-      "sha256": "077b4f73c76e765c53bc3a63b6b164c3bc418db3ffde6fe066537ab0fcc2b00f"
-    },
-    {
-      "path": "cangjie/journey_planner/fixtures/cases.json",
-      "bytes": 179206,
-      "sha256": "de7c3a222c2bec504c1fa0349188e866acabe77f5d73b1d442d3552624a56587"
-    },
-    {
-      "path": "cangjie/journey_planner/fixtures/make_cases.py",
-      "bytes": 8923,
-      "sha256": "87a705042e2a9bb99b1eff3d84e5e6532fdd944a7c2ec647625f43c3b6943e81"
-    },
-    {
-      "path": "cangjie/journey_planner/README.md",
-      "bytes": 1052,
-      "sha256": "4e486ca4355b5c24ca24f0bab603255dab9cfc4af5cadefab1055ae8944f03bd"
-    },
-    {
-      "path": "cangjie/journey_planner/src/main.cj",
-      "bytes": 46832,
-      "sha256": "d56b7a38a92f386e593d9cff41b152e1844812f5ade97559c5a7528bb3734886"
-    },
-    {
-      "path": "cangjie/README.md",
-      "bytes": 1573,
-      "sha256": "6962b077c7f9c5610b1060087b1e40f4fec9fab739c5ea6bc9222212e5064900"
-    },
-    {
-      "path": "cangjie/src/validator.cj",
-      "bytes": 16217,
-      "sha256": "6ba83eb028288d6df078a60f31eed6e995963c98bbcddb80eb5c098a109adc59"
-    },
-    {
       "path": "docs/GETTING_STARTED.md",
-      "bytes": 5948,
-      "sha256": "9ca3cc8b69578ab72204f2ed2299a0ed8420962925630dce55ed5cc0ae14dca3"
+      "bytes": 5796,
+      "sha256": "c86efca1ea9987d8e19820f9a187ecfd11a7396839104ed6f50b62a75bc07973"
     },
     {
       "path": "docs/images/home.png",
@@ -637,14 +297,14 @@
       "sha256": "2cf5be4e26844df4bc489aa3d55012f095ed2100f2233008395120621ea2e870"
     },
     {
-      "path": "frontend/dist/assets/index-CiAviQwY.js",
-      "bytes": 333433,
-      "sha256": "a1ac06b11362be66b478910dc74bfd9555b191e93f8ee1dc02b3bf41e8423962"
+      "path": "frontend/dist/assets/index-CzMZhQWe.css",
+      "bytes": 105618,
+      "sha256": "eff05ea43f88bc9ee71be981d9532545e1be80e1d23013b82eb4fcccc6cf539e"
     },
     {
-      "path": "frontend/dist/assets/index-DqkH0260.css",
-      "bytes": 112118,
-      "sha256": "1e7e76b6dfb92a1dfbf379a20d94607493dd23c53408965b7589068aaed39b9c"
+      "path": "frontend/dist/assets/index-Dhfpy-GJ.js",
+      "bytes": 311604,
+      "sha256": "3f2d6ea5233cc2acc6bd8910147b725c6dbd87172d9e0162e9a549fa9a549206"
     },
     {
       "path": "frontend/dist/favicon.svg",
@@ -654,7 +314,7 @@
     {
       "path": "frontend/dist/index.html",
       "bytes": 659,
-      "sha256": "806b3d37e6ae40d40b3653129dbe5cb22ea4f1bc028bba2d9e21551a04e7fcbd"
+      "sha256": "2fbe3ea6ea73e31a1bac124c6d64070afda393d9b14f2650a0b617bbd3c38e63"
     },
     {
       "path": "frontend/index.html",
@@ -727,19 +387,14 @@
       "sha256": "2a2508e9fedd77e46c823d1105bf3bae05690c3d9ccc5ae207329999376bf8af"
     },
     {
+      "path": "frontend/src/App.vue",
+      "bytes": 59134,
+      "sha256": "45956dd80e96b9727394575067dfb372027765d9187975f950b99d66e11ce245"
+    },
+    {
       "path": "frontend/src/api.ts",
       "bytes": 2113,
       "sha256": "3a5de2cb96aa1f8d2e6ae9e4ea38427f9c457dd388788e6580d2cc1151d4d230"
-    },
-    {
-      "path": "frontend/src/App.vue",
-      "bytes": 59136,
-      "sha256": "e65b86b980ceb5e731e5cdb8e142ce4e0036fd29ce442651387648071cc3e1fe"
-    },
-    {
-      "path": "frontend/src/appearance/appearance.css",
-      "bytes": 5942,
-      "sha256": "f6f1ae703468ef5a5a31317488b27fdb340cd6517ab33a08c2623b7df4318ec2"
     },
     {
       "path": "frontend/src/appearance/JourneyBackdrop.vue",
@@ -750,6 +405,11 @@
       "path": "frontend/src/appearance/JourneyCity.vue",
       "bytes": 7365,
       "sha256": "82efc1c0dd0fbe201499776540a3ddb52f670837b67788c9597eb54b9e3802a4"
+    },
+    {
+      "path": "frontend/src/appearance/appearance.css",
+      "bytes": 5942,
+      "sha256": "f6f1ae703468ef5a5a31317488b27fdb340cd6517ab33a08c2623b7df4318ec2"
     },
     {
       "path": "frontend/src/appearance/sceneTraffic.ts",
@@ -793,8 +453,8 @@
     },
     {
       "path": "frontend/src/components/ConstraintReplan.vue",
-      "bytes": 52378,
-      "sha256": "449873024f0a9a0e533ed09f77341c725ecbf2d7cc787d1962463356b4de92e7"
+      "bytes": 20707,
+      "sha256": "3aa5b14c86fd963365e342ea8dffbb30214db048f96e4fba13d88afc3dcb96e2"
     },
     {
       "path": "frontend/src/components/DailyTransfer.vue",
@@ -918,8 +578,8 @@
     },
     {
       "path": "frontend/src/conversationApi.ts",
-      "bytes": 1149,
-      "sha256": "bb34d20a189767e193df898d07cf2e911682f8748556970d79d83cab4e81aed8"
+      "bytes": 1855,
+      "sha256": "6743b62875ed15a78500070cfe65dfcc392230f4aa5135767f17978ff5bc7ab8"
     },
     {
       "path": "frontend/src/dayTimeline.ts",
@@ -1023,8 +683,8 @@
     },
     {
       "path": "frontend/tests/conversationApi.test.mjs",
-      "bytes": 2320,
-      "sha256": "536fdbb83be76912cc8cb00e86d9da9706296e5c29d5218f52fbd22b3029f707"
+      "bytes": 1598,
+      "sha256": "361142fe7fc79d3a0f68dff24e861197028ef7fd42bd0e34826ef0141ff84317"
     },
     {
       "path": "frontend/tests/dayTimeline.test.ts",
@@ -1062,14 +722,14 @@
       "sha256": "24849555ad57f422d46846f360549fc26699aa7214eb412b8eb76c2efb539f57"
     },
     {
-      "path": "LICENSE",
-      "bytes": 9247,
-      "sha256": "f0dade5c933769bfb43d75efb9517d42a0e85eb8253e8b8064376fdd58feef45"
-    },
-    {
       "path": "licenses/COMPONENTS.json",
       "bytes": 100812,
       "sha256": "87d6674ffcd32c7c516946535593e09332262b47a3ab2f0cb552eb93cc505b79"
+    },
+    {
+      "path": "licenses/README.md",
+      "bytes": 7795,
+      "sha256": "c3c252f58766bc7256957d33b0a7134246cf5c88cd6ce7cbdb0334863ea6a4f5"
     },
     {
       "path": "licenses/launcher/COPYING.txt",
@@ -1082,11 +742,6 @@
       "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
     },
     {
-      "path": "licenses/models/embedding-card.md",
-      "bytes": 24,
-      "sha256": "d8d7a46d41a1a37fe4f0a5f637bf55c649310185329127d8a2204632e480be17"
-    },
-    {
       "path": "licenses/models/FlagEmbedding-LICENSE.txt",
       "bytes": 1065,
       "sha256": "587a673933425dbc36ec61268d3b954051b2d3ef3c9b322ede357976055ffdd5"
@@ -1095,6 +750,11 @@
       "path": "licenses/models/NOTICE.md",
       "bytes": 329,
       "sha256": "905b0456f0c492dc74ae65d3bdff561480bbddd0fcce0adcfeda3700775ca061"
+    },
+    {
+      "path": "licenses/models/embedding-card.md",
+      "bytes": 24,
+      "sha256": "d8d7a46d41a1a37fe4f0a5f637bf55c649310185329127d8a2204632e480be17"
     },
     {
       "path": "licenses/models/reranker-card.md",
@@ -1110,11 +770,6 @@
       "path": "licenses/railway-mcp/UPSTREAM.json",
       "bytes": 3039,
       "sha256": "a4bb0d353fb9866617c4549c171aa0fc45d2b7ca6f385bf04fe69d27dbb54ef6"
-    },
-    {
-      "path": "licenses/README.md",
-      "bytes": 8140,
-      "sha256": "25ed63b69b1262dd98d688b4119f5521bbe2ffcd32bef3014e0d2fa012807e6c"
     },
     {
       "path": "licenses/runtime/Python-3.11.9-LICENSE.txt",
@@ -1582,6 +1237,11 @@
       "sha256": "c26cae81da4508e5e249985777a33821f183223ebb74d7f8cfbf90fe7eef2fb7"
     },
     {
+      "path": "licenses/software/python/numpy-1.26.4/numpy-1.26.4.dist-info/LICENSE.txt",
+      "bytes": 48688,
+      "sha256": "e261222a74adff28f88160dac1c5cb302d93b67e9ca989eb83bf311e11a9970a"
+    },
+    {
       "path": "licenses/software/python/numpy-1.26.4/numpy/core/include/numpy/random/LICENSE.txt",
       "bytes": 1039,
       "sha256": "d544761558b510866c21f7e8a2d5716fca76e0b98117e3b6b86314db7244d150"
@@ -1595,11 +1255,6 @@
       "path": "licenses/software/python/numpy-1.26.4/numpy/random/LICENSE.md",
       "bytes": 3582,
       "sha256": "b4bc2f4fa1c95778f1ed3dd8f14706bece399475b978f9f34b5d3cd72521b48a"
-    },
-    {
-      "path": "licenses/software/python/numpy-1.26.4/numpy-1.26.4.dist-info/LICENSE.txt",
-      "bytes": 48688,
-      "sha256": "e261222a74adff28f88160dac1c5cb302d93b67e9ca989eb83bf311e11a9970a"
     },
     {
       "path": "licenses/software/python/onnxruntime-1.19.2/onnxruntime/LICENSE",
@@ -1782,14 +1437,14 @@
       "sha256": "a74d826efb242db087b850348e20abbfd591b51e2081f2048735290913872924"
     },
     {
-      "path": "licenses/software/python/pywin32-312/pywin32-312.dist-info/licenses/pythonwin/pywin/idle/LICENSE.txt",
-      "bytes": 12540,
-      "sha256": "a0fa1e7b8a4230055685e796548ac084a6c0eea395294574093bba72efd9191b"
-    },
-    {
       "path": "licenses/software/python/pywin32-312/pywin32-312.dist-info/licenses/pythonwin/Scintilla/License.txt",
       "bytes": 873,
       "sha256": "57ec79bbeab4fd1cf7460a7ad450d2ab01471810459aeae9e75e4c66b472095f"
+    },
+    {
+      "path": "licenses/software/python/pywin32-312/pywin32-312.dist-info/licenses/pythonwin/pywin/idle/LICENSE.txt",
+      "bytes": 12540,
+      "sha256": "a0fa1e7b8a4230055685e796548ac084a6c0eea395294574093bba72efd9191b"
     },
     {
       "path": "licenses/software/python/pywin32-312/pywin32-312.dist-info/licenses/win32/License.txt",
@@ -1892,11 +1547,6 @@
       "sha256": "dcb95677a02240243187e964f941847d19b17821cf99e5afae684fab328c19bf"
     },
     {
-      "path": "licenses/software/python/sympy-1.14.0/sympy/parsing/latex/LICENSE.txt",
-      "bytes": 1075,
-      "sha256": "007bc30a58fa40a996e772047120de4eaf31f5110e4f9c3b5f93fcdfbe2eaca1"
-    },
-    {
       "path": "licenses/software/python/sympy-1.14.0/sympy-1.14.0.dist-info/licenses/AUTHORS",
       "bytes": 55779,
       "sha256": "82b1038521b0696c63c90b31ed4a0a2c9c4c16871c648b157b07ca44b6f18f8d"
@@ -1905,6 +1555,11 @@
       "path": "licenses/software/python/sympy-1.14.0/sympy-1.14.0.dist-info/licenses/LICENSE",
       "bytes": 7885,
       "sha256": "07a5e9819f727b4986ad2829c7a29a6320d42575f720eb24d71b7fef573a0286"
+    },
+    {
+      "path": "licenses/software/python/sympy-1.14.0/sympy/parsing/latex/LICENSE.txt",
+      "bytes": 1075,
+      "sha256": "007bc30a58fa40a996e772047120de4eaf31f5110e4f9c3b5f93fcdfbe2eaca1"
     },
     {
       "path": "licenses/software/python/tenacity-9.2.1/tenacity-9.2.1.dist-info/licenses/LICENSE",
@@ -1982,11 +1637,6 @@
       "sha256": "c809c969ec7e11b9ff37784e9c6fcc0b7c5148d168e18b05aed797e03fbd6ead"
     },
     {
-      "path": "README.md",
-      "bytes": 3840,
-      "sha256": "992b8556d5fe947bf22c63d782b05517e7fdc31f0dd7a0ce33fe122c2923e2c2"
-    },
-    {
       "path": "requirements-dev.txt",
       "bytes": 56,
       "sha256": "06bc048f76407b79dabd4044972e8438203b74a0fac8e51359f543c2e7c4b852"
@@ -2057,11 +1707,6 @@
       "sha256": "3477ef954f12ead03c16f2be8861e709491b32848b7a9980d0c1f373a10e1165"
     },
     {
-      "path": "tests/constraint_fixtures.py",
-      "bytes": 5459,
-      "sha256": "8e7e481ae1770d9830a5f5deff644fb0216f2af267f72e84c715125ab5cb0dc4"
-    },
-    {
       "path": "tests/fixtures/rag_questions.json",
       "bytes": 18769,
       "sha256": "f516e261198f434b485fd49dbb42c119f51dfd36b3383d3a643e13841bd7a102"
@@ -2072,6 +1717,11 @@
       "sha256": "74191459eabea9c89e828a626602a89caa1a97869c2e10c373d8ea45fd898eaa"
     },
     {
+      "path": "tests/plan_samples.py",
+      "bytes": 2996,
+      "sha256": "a4808061892e027ac7964ff1f5b75ebc8c2746a1913525fe7c884e4ec959c99b"
+    },
+    {
       "path": "tests/retrieval_metrics.py",
       "bytes": 1848,
       "sha256": "fc152a4d1668f45e49f137ba6499d2d9790f0c55b4e98bf2012f60ad55f4627c"
@@ -2080,6 +1730,11 @@
       "path": "tests/test_administrative.py",
       "bytes": 5743,
       "sha256": "a98ad42eb0002aad6dbb03688ee40ae0a82823dfbe16049367e07e118c65354b"
+    },
+    {
+      "path": "tests/test_ai_revision.py",
+      "bytes": 9754,
+      "sha256": "189cce386094a9bcab55e2ad894390941b38c9d7901dad2138bf0e9c401cb4e6"
     },
     {
       "path": "tests/test_arrival_hotel_meals.py",
@@ -2098,8 +1753,8 @@
     },
     {
       "path": "tests/test_booking_finance.py",
-      "bytes": 9577,
-      "sha256": "7dc20f7d9a9e867d59f177b8de311e341a33a696705067d3c0be7dd5b5bb0a44"
+      "bytes": 9567,
+      "sha256": "cfd3ae02da8e1264417c75537e78c3aade79b6382d3f8df26efc5f5f6ba9497c"
     },
     {
       "path": "tests/test_booking_map_failures.py",
@@ -2108,68 +1763,28 @@
     },
     {
       "path": "tests/test_booking_recovery_api.py",
-      "bytes": 7329,
-      "sha256": "c3bccb1de98d570fc45004d5e258747009f5b7d7584537125d6e20d5c781c37e"
+      "bytes": 7319,
+      "sha256": "096530d6cf9dd43bc03c5d7a197f3ef16297dd4331c027ac63c12bedf7fe638f"
     },
     {
       "path": "tests/test_booking_regenerate.py",
-      "bytes": 8970,
-      "sha256": "beda71df0ab1c870a565b9c85c36567cd34642b31f45f269e570af4aa75657cf"
+      "bytes": 8956,
+      "sha256": "125c0c89aa923219c662c304cf4c3cf78354eb054864e60da7d3be8be0d8f8f4"
     },
     {
       "path": "tests/test_booking_route_recovery.py",
-      "bytes": 29208,
-      "sha256": "f6166626bf08cf06e3ed4a8437814f6d599f7a2e271203ed0e3b7ee9c51ead8e"
+      "bytes": 29184,
+      "sha256": "4729bcce218773a6932fe44a46ea7588e9b50c164a24577a62acdc655b2ba2d0"
     },
     {
       "path": "tests/test_booking_schedule_atomic.py",
-      "bytes": 9690,
-      "sha256": "67a7a04fbdcc671629199656e8123a7ab9cc0f1855726f6ef39e58242b684e6a"
+      "bytes": 9680,
+      "sha256": "ce1ec4a5bc90f8cb9e9703ac9279f0bdaba1435d6f1157401346759b1b993d01"
     },
     {
       "path": "tests/test_budget_quantities.py",
       "bytes": 7415,
       "sha256": "d8c3effbae1fb3eb1294cd1ec69a564be5f70c92fe5f044dea6b551b59c2cf90"
-    },
-    {
-      "path": "tests/test_constraint_city_scope.py",
-      "bytes": 10302,
-      "sha256": "5600d578e2bd3b3b5526e07d9e36949038374941bb81b070097fe8234b84c06b"
-    },
-    {
-      "path": "tests/test_constraint_http.py",
-      "bytes": 6756,
-      "sha256": "985408195c71d356a608bffdd234ef5da5fb5841b9f8c3ee15f1f3d143bdea54"
-    },
-    {
-      "path": "tests/test_constraint_intent.py",
-      "bytes": 7946,
-      "sha256": "ead60614c1fb723cff753b97f3703837c0e2bd0f134584370d02415dca5fd41c"
-    },
-    {
-      "path": "tests/test_constraint_native.py",
-      "bytes": 5442,
-      "sha256": "d39cbc707704eb31e3b5eb452f6779a4315e841c9d29d3a1d24fae32ab0a36b5"
-    },
-    {
-      "path": "tests/test_constraint_preferences.py",
-      "bytes": 9470,
-      "sha256": "e66483019e4439fd9ced34338d235ac78877d3b2ee3f322d2e17b7ef0b04bdc5"
-    },
-    {
-      "path": "tests/test_constraint_replan.py",
-      "bytes": 24153,
-      "sha256": "89ff47289e58aaaea3f6dce3bb8e2422370d0d5ffecc80c36b9f4f8cc4d0bbc6"
-    },
-    {
-      "path": "tests/test_constraint_replan_api.py",
-      "bytes": 4900,
-      "sha256": "0bc98bbe8b93162c25913d50ccfe792943f335e08ce1bee18248a1a24b0517cf"
-    },
-    {
-      "path": "tests/test_constraint_route_query.py",
-      "bytes": 10189,
-      "sha256": "0d28d283fc69621d40d7d1628bc544addff64b4680ec67880fcc57116f46dedd"
     },
     {
       "path": "tests/test_conversation.py",
@@ -2223,13 +1838,13 @@
     },
     {
       "path": "tests/test_merged_bookings.py",
-      "bytes": 38544,
-      "sha256": "3118b9de98f205c4c759f16bbbb3cfc723efdd568888d4d20ce23ccc2c560aae"
+      "bytes": 38520,
+      "sha256": "eb45b6c4dcb6d6f5f7e7b364c3389b2f0d244044650f23d471da7f76418ffd0f"
     },
     {
       "path": "tests/test_merged_entrypoints.py",
-      "bytes": 9765,
-      "sha256": "cf782f9d2f908d9dcffd18f1d71e58adfbf38a06cbdad5632bf1f145c2c23f05"
+      "bytes": 6425,
+      "sha256": "340c99f490eb000cde9a4cdd6b5365cea326271da88563b2a8d8fb652ee113ab"
     },
     {
       "path": "tests/test_merged_map.py",
@@ -2253,8 +1868,8 @@
     },
     {
       "path": "tests/test_merged_schema.py",
-      "bytes": 7470,
-      "sha256": "9c2b0d4becf0d57f53c50984581c6a1bc5a7cde3b2433e6b657b9c87b1c8306e"
+      "bytes": 7007,
+      "sha256": "34b19b39034a0b46a4fc73968e60b3c3ba2fee7d3031994c0b8f1764f44557d1"
     },
     {
       "path": "tests/test_merged_transfer_timeline.py",
@@ -2292,14 +1907,14 @@
       "sha256": "4b94d9a46d8bec6d28c0b2942bb0462b880bda4d9961651fed7a8847932d9eac"
     },
     {
-      "path": "tests/test_planning_conversation.py",
-      "bytes": 24504,
-      "sha256": "d80a78ba1ffd305f90685db0efe62a637a7276ac64109a48d6851570586b7902"
+      "path": "tests/test_preparation.py",
+      "bytes": 17257,
+      "sha256": "1b0972052126c9091722813933b3aec112ff64206370080a2ba50c251d582c18"
     },
     {
-      "path": "tests/test_preparation.py",
-      "bytes": 17267,
-      "sha256": "312077017e8b5f4c227a112efb02d27689da96599c23319e4794352447d7a3ee"
+      "path": "tests/test_python_validator.py",
+      "bytes": 2079,
+      "sha256": "ea84269d3ca4cc2f718c659680c37b17ac195e071ddc0366319a284006f57a30"
     },
     {
       "path": "tests/test_qweather.py",
@@ -2387,6 +2002,26 @@
       "sha256": "4098e224edfe1e8ce17d2338d96a30850b9281d28d75f328a681481e497a3f32"
     },
     {
+      "path": "third_party/mcp-server-12306/LICENSE",
+      "bytes": 1063,
+      "sha256": "c4974fb52c446f709bbdcbbde7483c03b65f1635597969a1992571e0dc608407"
+    },
+    {
+      "path": "third_party/mcp-server-12306/MANIFEST.in",
+      "bytes": 48,
+      "sha256": "e99bbb446e6f9c73827eb24995c1920c1d67814a406a97f8df1e219c9ad165e3"
+    },
+    {
+      "path": "third_party/mcp-server-12306/README.md",
+      "bytes": 10996,
+      "sha256": "77aecb98a3c1fbf66c832daa98716724454dce8aac74e5ff694cdcc9a42e50cc"
+    },
+    {
+      "path": "third_party/mcp-server-12306/UPSTREAM.json",
+      "bytes": 3039,
+      "sha256": "a4bb0d353fb9866617c4549c171aa0fc45d2b7ca6f385bf04fe69d27dbb54ef6"
+    },
+    {
       "path": "third_party/mcp-server-12306/docs/get_current_time.md",
       "bytes": 930,
       "sha256": "0f75830ab54ed0b5f464f40cd0e81e6a707f9e673b36ca7e0b7624647c4f531a"
@@ -2417,24 +2052,9 @@
       "sha256": "dc1f089fdeb01375b5d16926d1bfe4d7eae5a97aa17f1f6af5616e8e59fe5c60"
     },
     {
-      "path": "third_party/mcp-server-12306/LICENSE",
-      "bytes": 1063,
-      "sha256": "c4974fb52c446f709bbdcbbde7483c03b65f1635597969a1992571e0dc608407"
-    },
-    {
-      "path": "third_party/mcp-server-12306/MANIFEST.in",
-      "bytes": 48,
-      "sha256": "e99bbb446e6f9c73827eb24995c1920c1d67814a406a97f8df1e219c9ad165e3"
-    },
-    {
       "path": "third_party/mcp-server-12306/pyproject.toml",
       "bytes": 2674,
       "sha256": "5b8ffe1f2fa4961602ca1cc3562b3bad33399857a67c9445af35b5113ec1cfaa"
-    },
-    {
-      "path": "third_party/mcp-server-12306/README.md",
-      "bytes": 10996,
-      "sha256": "77aecb98a3c1fbf66c832daa98716724454dce8aac74e5ff694cdcc9a42e50cc"
     },
     {
       "path": "third_party/mcp-server-12306/scripts/start_server.py",
@@ -2507,29 +2127,14 @@
       "sha256": "51245ea9db19aa9352acd850a70d9e71fcaa692a67b9a4b63f37917d79424ff3"
     },
     {
-      "path": "third_party/mcp-server-12306/UPSTREAM.json",
-      "bytes": 3039,
-      "sha256": "a4bb0d353fb9866617c4549c171aa0fc45d2b7ca6f385bf04fe69d27dbb54ef6"
-    },
-    {
       "path": "third_party/mcp-server-12306/uv.lock",
       "bytes": 238830,
       "sha256": "6a91a9319e6cea241086cc0c189f4bac07a2b7a493e9f7edfb023bacc8082beb"
     },
     {
       "path": "tools/build_portable.py",
-      "bytes": 12327,
-      "sha256": "a1daf8d8323c616574d4dfa59eca6dc1cc9e868ff3b29dd62d948eea840ffa8f"
-    },
-    {
-      "path": "tools/check_cangjie.py",
-      "bytes": 3424,
-      "sha256": "9a2b7f19a14a6636e1c22c8d9cebe6a22c465feb2e51261ac8a3037cfa8153a0"
-    },
-    {
-      "path": "tools/check_constraint_planner.py",
-      "bytes": 10748,
-      "sha256": "d44f4e71c00af1307bea3d8d2fcf1e3cdecb1bb888ec9f3c82bb393840e05f73"
+      "bytes": 11083,
+      "sha256": "60f04170011a4564a5c6bf585ecc998dbe90b435b4d5c15161e62170127b668f"
     },
     {
       "path": "tools/import_study_materials.py",
@@ -2543,8 +2148,8 @@
     },
     {
       "path": "tools/portable/manager.py",
-      "bytes": 10707,
-      "sha256": "ba7f22d13862d9809be2c2979c36a3405356d0c4917bdc0371e7fdf2c206d44c"
+      "bytes": 10542,
+      "sha256": "b23186d8899fba22cfe34de72fcdf9657dee57e92ffd0d7370a73a78c079cd40"
     },
     {
       "path": "tools/prepare_rag.py",

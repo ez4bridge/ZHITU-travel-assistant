@@ -6,7 +6,7 @@ import pytest
 
 from backend.booking_finance import confirmed_expense_conflicts, preserve_confirmed_expenses
 from backend.models import ConfirmedHotel, Expense
-from test_constraint_replan import sample_plan
+from plan_samples import sample_plan
 
 
 def plans():

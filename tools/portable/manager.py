@@ -198,8 +198,7 @@ def main() -> int:
         import fastembed
         print(json.dumps({'python': sys.version.split()[0], 'frontend': True, 'local_inference': True,
                           'railway_runtime': RAIL_PYTHON.is_file(),
-                          'validator': 'cangjie' if (APP / 'cangjie/bin/validator.exe').is_file() else 'python',
-                          'constraint_runtime': (APP / 'cangjie/bin/journey_planner.exe').is_file(),
+                          'validator': 'python',
                           'model': env.get('LLM_MODEL', '')}, ensure_ascii=False))
         return 0
     with launch_lock():

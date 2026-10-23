@@ -447,7 +447,7 @@ async function acceptConstraintPlan(updated: Plan) {
           <template v-if="plan && day">
             <p v-if="retainedPlanNotice" class="stay-budget-note card" role="status">{{ retainedPlanNotice }}</p>
             <div class="plan-heading card"><div><span class="eyebrow"><MapPin :size="13" /> {{ plan.request.destination }} · {{ plan.request.days }} 天 · {{ plan.request.people }} 人</span><h2>{{ plan.itinerary.title }}</h2><p>{{ plan.itinerary.summary }}</p></div><span class="revision-badge">版本 {{ plan.revision }}</span></div>
-            <p v-if="studyMode" class="study-scope-note subtle-note">历史研学保留原文引用和资料问答；本场景请使用下方研学调整入口，普通旅行的仓颉约束与预订补录暂不用于研学。</p>
+            <p v-if="studyMode" class="study-scope-note subtle-note">历史研学保留原文引用和资料问答；本场景请使用下方研学调整入口，普通旅行的 AI 调整与预订补录暂不用于研学。</p>
             <div class="day-tabs" role="tablist" aria-label="选择行程日期"><button v-for="(d, i) in plan.itinerary.days" :key="d.date" role="tab" :aria-selected="activeDay === i" :class="{ active: activeDay === i }" @click="setDay(i)"><span>DAY {{ String(i + 1).padStart(2, '0') }}</span><strong>{{ d.date.slice(5).replace('-', ' / ') }}</strong></button></div>
             <WeatherCard v-for="item in dayWeather" :key="item.city" :weather="item.weather" :city="item.city" :date="day.date" :retrying="weatherRetryCity === item.city" :retry-disabled="operationBusy || checking || Boolean(weatherRetryCity)" :refreshed="Boolean(weatherOverrides[item.city])" :retry-error="weatherRetryErrors[item.city]" @retry="retryWeather(item.city)" />
             <div class="journey-layout">

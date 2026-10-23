@@ -14,8 +14,8 @@ from backend.models import ConfirmedHotel, BookedTransport, RouteLeg, RouteOptio
 from backend.models import ValidationReport
 from backend.validation import validate_core, normalized_input
 from backend.storage import Store
-from test_constraint_replan import sample_plan
-from test_constraint_city_scope import mixed_plan
+from plan_samples import sample_plan
+from plan_samples import mixed_plan
 
 
 class SyntheticBookingMap:

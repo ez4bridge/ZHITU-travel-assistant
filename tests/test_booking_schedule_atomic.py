@@ -9,7 +9,7 @@ import pytest
 from backend.bookings import apply_transport_anchors, repair_booking_schedule
 from backend.models import BookedTransport, CityTransfer, ConfirmedHotel, RouteLeg, Stop, TripRequest
 from backend.storage import Store
-from test_constraint_replan import sample_plan
+from plan_samples import sample_plan
 
 
 def road(before, after, minutes, day_index=0):

@@ -41,7 +41,6 @@ from .map_region import resolve_map_region
 from .place_guide import GuideService, GuideStore
 from .knowledge import KnowledgeBase
 from .study_agent import answer_study, generate_study_plan, plan_places, update_study_request
-from .constraint_bridge import constraint_planner
 from .constraint_routes import active_constraint_previews, install_constraint_routes
 from .booking_routes import install_booking_routes, active_booking_previews
 from .planning_conversation_routes import install_conversation_routes, active_conversations
@@ -115,16 +114,14 @@ async def conversation_error(request, error):
 
 @app.get('/api/health')
 async def health():
-    ready = await validator.ready()
-    constraints_ready = await constraint_planner.ready()
     return {'app_id': 'travel-assistant', 'status': 'ok', 'model': settings.llm_model,
             'capabilities': {'planning': bool(settings.llm_key and settings.amap_key), 'map': bool(settings.amap_web_key and settings.amap_js_sec),
                              'railway': settings.rail_mcp_enabled and settings.rail_mcp_python.is_file(),
-                             'routing': bool(settings.amap_key), 'validator': 'cangjie' if ready else 'python',
-                             'constraint_replanning': constraints_ready},
+                             'routing': bool(settings.amap_key), 'validator': 'python',
+                             'constraint_replanning': False, 'ai_adjustment': True},
             'missing': [name for name, value in [('LLM_API_KEY', settings.llm_key), ('AMAP_API_KEY', settings.amap_key),
                        ('AMAP_WEB_KEY', settings.amap_web_key), ('AMAP_JS_SEC', settings.amap_js_sec)] if not value],
-            'validator_diagnostic': validator.diagnostic, 'constraint_diagnostic': constraint_planner.diagnostic,
+            'validator_diagnostic': validator.diagnostic, 'constraint_diagnostic': '旧约束重排已停用，请使用 AI 调整',
             'tasks': {'active': _active_tasks + active_constraint_previews() + active_booking_previews() + active_conversations(),
                       'constraint_active': active_constraint_previews(), 'booking_active': active_booking_previews(),
                       'conversation_active': active_conversations(), **_metrics},

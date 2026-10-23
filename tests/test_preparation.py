@@ -11,7 +11,7 @@ from backend.models import (BookedTransport, CityTransfer, ConfirmedHotel, Expen
 from backend.preparation import preparation_context
 from backend.storage import Store
 from backend.validation import normalized_input, validate_core
-from test_constraint_replan import sample_plan
+from plan_samples import sample_plan
 
 
 def point(sid, name, city, start, end, kind='break', role='', ref=''):

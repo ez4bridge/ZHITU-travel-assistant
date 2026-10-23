@@ -74,20 +74,11 @@ def test_study_constraints_still_reject_invalid_city_and_missing_evidence():
 
 
 @pytest.mark.asyncio
-async def test_native_common_core_keeps_python_study_prevalidation(monkeypatch):
+async def test_python_validator_keeps_study_prevalidation():
     plan = record()
     plan.request = TripRequest(destination='上海', start_date='2026-10-23', days=1, study=StudyOptions())
-    validator = Validator(preferred='python')
-    async def ready():
-        return True
-    async def common_core(data):
-        # Explicitly simulated native response, not a claim of native execution.
-        assert 'study_missing_evidence' in {entry['code'] for entry in data['pre_errors']}
-        return validate_core(data)
-    monkeypatch.setattr(validator, 'ready', ready)
-    monkeypatch.setattr(validator, 'call_cangjie', common_core)
-    result = await validator.validate(plan.request, plan.itinerary, [], None)
-    assert result.backend == 'cangjie'
+    result = await Validator().validate(plan.request, plan.itinerary, [], None)
+    assert result.backend == 'python'
     assert 'study_missing_evidence' in {entry.code for entry in result.errors}
 
 

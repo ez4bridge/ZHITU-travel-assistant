@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from backend.agent import booking_facts_instruction
 from backend.booking_routes import booking_trip, preview_bookings
 from backend.models import CityTransfer, ConfirmedHotel, DayPlan, Expense, Itinerary, Stop, TripRequest
-from test_constraint_city_scope import mixed_plan
+from plan_samples import mixed_plan
 from test_merged_bookings import SyntheticBookingMap, booking_body, hotel, setup_booking, train
 
 

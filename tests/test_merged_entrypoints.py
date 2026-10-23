@@ -11,16 +11,13 @@ from fastapi.testclient import TestClient
 import pytest
 
 import backend.main as main
-import backend.constraint_replan as replan
-import backend.planning_conversation as dialogue
-from backend.constraint_intent import IntentPatch
 from backend.constraint_models import ConstraintIntentRequest, ConstraintPreviewRequest
 from backend.constraint_storage import ConstraintStore, fingerprint
 from backend.models import (GuideInsight, PlanningGuideSource, StudyAnswer, StudyContext, StudyFact,
                             StudyOptions, StudyParagraph, StudySource, StudyStop,
                             TripRequest, WeatherDay, WeatherSnapshot)
+from plan_samples import sample_plan
 from backend.storage import Store
-from test_constraint_replan import FixedBridge, sample_plan
 
 
 @pytest.fixture
@@ -56,66 +53,6 @@ def assert_metadata(saved, original):
     assert saved.request.guides == original.request.guides
     assert saved.itinerary.guide_insights == original.itinerary.guide_insights
     assert saved.itinerary.days[0].tips == original.itinerary.days[0].tips
-
-
-def test_constraint_http_preview_apply_preserves_weather_and_user_sources(merged_store, monkeypatch):
-    import backend.constraint_routes as routes
-    original = ordinary_plan()
-    merged_store.save(original)
-    raw_before = merged_store.get(original.id).model_dump_json()
-    actual_preview = replan.preview
-
-    async def isolated_preview(plan, state, body, storage):
-        return await actual_preview(plan, state, body, storage, bridge=FixedBridge())
-
-    monkeypatch.setattr(routes.constraint_replan, 'preview', isolated_preview)
-    with TestClient(main.app) as client:
-        preview = client.post(f'/api/plans/{original.id}/constraint-preview',
-            json=request_body(original, budget_cents=90000))
-        assert preview.status_code == 200, preview.text
-        assert preview.json()['outcome'] == 'provisional'
-        assert len(merged_store.list()) == 1
-        applied = client.post(f'/api/plans/{original.id}/constraint-apply',
-            json={'preview_id': preview.json()['preview_id']})
-        assert applied.status_code == 200, applied.text
-        child_id = applied.json()['plan']['id']
-    child = merged_store.get(child_id)
-    assert child.parent_id == original.id and child.request.budget == 900
-    assert_metadata(child, original)
-    assert merged_store.get(original.id).model_dump_json() == raw_before
-    assert ConstraintStore(merged_store.path).state(child)['state_revision'] == 1
-
-
-def test_planning_dialogue_http_preview_apply_preserves_weather_and_user_sources(merged_store, monkeypatch):
-    import backend.planning_conversation_routes as routes
-    original = ordinary_plan()
-    merged_store.save(original)
-    raw_before = merged_store.get(original.id).model_dump_json()
-
-    async def interpret_budget(plan, state, body):
-        assert body.instruction == '全员预算改成900元'
-        return dialogue.Proposal(patch=IntentPatch(budget_cents=90000), reply='已按900元全员预算形成预览。')
-
-    async def isolated_dialogue(plan, state, body, storage):
-        return await dialogue.conversation_preview(plan, state, body, storage,
-            interpreter=interpret_budget, bridge=FixedBridge())
-
-    monkeypatch.setattr(routes, 'conversation_preview', isolated_dialogue)
-    with TestClient(main.app) as client:
-        response = client.post(f'/api/plans/{original.id}/conversation-preview', json={
-            'command': request_body(original), 'instruction': '全员预算改成900元', 'messages': []})
-        assert response.status_code == 200, response.text
-        result = response.json()
-        assert result['unresolved'] == [] and result['preview']['outcome'] == 'provisional'
-        assert len(merged_store.list()) == 1
-        applied = client.post(f'/api/plans/{original.id}/constraint-apply',
-            json={'preview_id': result['preview']['preview_id']})
-        assert applied.status_code == 200, applied.text
-        child_id = applied.json()['plan']['id']
-    child = merged_store.get(child_id)
-    assert child.parent_id == original.id and child.request.budget == 900
-    assert_metadata(child, original)
-    assert merged_store.get(original.id).model_dump_json() == raw_before
 
 
 def study_plan():

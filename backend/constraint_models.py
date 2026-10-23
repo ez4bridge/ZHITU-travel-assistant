@@ -1,4 +1,4 @@
-"""Public, additive contract for optional Cangjie constraint previews."""
+"""Compatible preview identities, route choices and atomic apply requests."""
 from datetime import datetime, timedelta
 from typing import Literal
 
