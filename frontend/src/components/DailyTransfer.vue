@@ -15,6 +15,12 @@ const groupCost = computed(() => {
   const amount = Number(props.transfer.unit_cost)
   return Number.isFinite(amount) ? (amount * (props.transfer.basis === 'person' ? props.people : 1)).toLocaleString('zh-CN', { maximumFractionDigits: 2 }) : '待核实'
 })
+const serviceLabel = computed(() => {
+  if (props.transfer.train_code) return props.transfer.train_code
+  if (props.transfer.mode === 'flight') return '航班号待选择'
+  if (props.transfer.mode === 'train') return '车次待确认'
+  return ''
+})
 </script>
 
 <template>
@@ -24,7 +30,7 @@ const groupCost = computed(() => {
     <p class="transfer-status">{{ status }}</p>
     <div class="transfer-times"><span><small>出发</small><strong>{{ transfer.departure_time }}</strong><time>{{ transfer.departure_date }}</time><b>{{ transfer.departure_station || '站点 / 机场待确认' }}</b></span><ArrowRight :size="17" /><span><small>到达</small><strong>{{ transfer.arrival_time }}</strong><time>{{ transfer.arrival_date }}</time><b>{{ transfer.arrival_station || '站点 / 机场待确认' }}</b></span></div>
     <p v-if="continuedFromPrevious" class="transfer-note">此段交通从前一天延续至本日，到达后还需预留出站与市内接驳时间。</p>
-    <p v-if="transfer.train_code || transfer.seat_type" class="transfer-service">{{ transfer.train_code || '班次待确认' }}<span v-if="transfer.seat_type"> · {{ transfer.seat_type }}</span><span v-if="transfer.schedule_status === 'queried' && transfer.seat_availability"> · 查询时余票：{{ transfer.seat_availability }}</span></p>
+    <p v-if="serviceLabel" class="transfer-service">{{ serviceLabel }}<span v-if="transfer.seat_type"> · {{ transfer.seat_type }}</span><span v-if="transfer.schedule_status === 'queried' && transfer.seat_availability"> · 查询时余票：{{ transfer.seat_availability }}</span></p>
     <p class="transfer-price">全员该段约 ¥{{ groupCost }} <small>{{ transfer.price_status === 'user_reported' ? '用户填写的总额' : transfer.price_status === 'reference' ? '参考票价' : '估算费用' }} · 已计入整趟预算{{ continuedFromPrevious ? '，跨夜延续展示不重复计费' : '' }}</small></p>
     <p v-if="transfer.basis === 'person'" class="transfer-note">每人 ¥{{ transfer.unit_cost }} × {{ people }} 人；实际成交金额以订单为准。</p>
     <p v-if="transfer.note" class="transfer-note">{{ transfer.note }}</p>

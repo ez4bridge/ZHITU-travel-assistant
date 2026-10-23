@@ -129,7 +129,6 @@ const reminderCount = computed(() => {
   const findings = value ? value.errors.length + value.warnings.length + value.unknowns.length : 0
   return findings + (plan.value?.adjustments?.length || 0) + (travelTips.value?.general.length || 0)
 })
-const hasReminders = computed(() => reminderCount.value > 0)
 const totalMinutes = computed(() => Math.ceil(dayRoutes.value.reduce((sum, r) => sum + (r.duration_s || 0), 0) / 60))
 const totalDistance = computed(() => (dayRoutes.value.reduce((sum, r) => sum + (r.distance_m || 0), 0) / 1000).toFixed(1))
 const hasMeasuredRoutes = computed(() => dayRoutes.value.some(route => route.scope !== 'intercity' && route.available && route.duration_s != null && route.distance_m != null))
@@ -479,7 +478,7 @@ async function acceptConstraintPlan(updated: Plan) {
               <BookingEditor ref="bookingPanel" :plan="plan" hide-entry :disabled="busy || checking || constraintBusy" @busy="bookingBusy = $event" @applied="acceptConstraintPlan" />
             </section>
 
-            <details class="reminder-center card" :open="hasReminders">
+            <details class="reminder-center card">
               <summary><CircleAlert :size="16" /><strong>提醒与检查</strong><span>{{ reminderCount }} 项</span><small>同一提醒只在这里出现一次</small></summary>
               <ValidationCard :key="plan.id" :report="plan.validation" :days="plan.itinerary.days" :busy="operationBusy" :checking="checking" @revalidate="validateAgain" @revise="reviseProblems" />
               <PlanRecovery :plan="plan" :busy="operationBusy" :checking="checking" @refresh="run(false, true)" @revise="reviseProblems" />

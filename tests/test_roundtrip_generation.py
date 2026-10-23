@@ -64,10 +64,11 @@ async def test_missing_or_wrong_roundtrip_uses_existing_single_repair(monkeypatc
 async def test_repeated_missing_transfers_fail_instead_of_returning_partial_budget(monkeypatch):
     request, invalid = roundtrip()
     invalid.transfers = []
-    agent, create = model_client(monkeypatch, [invalid, invalid])
+    # research + three bounded attempts (repair, automatic retry) before failing.
+    agent, create = model_client(monkeypatch, [invalid, invalid, invalid])
     with pytest.raises(RuntimeError, match='跨城交通'):
         await agent.generate_itinerary(request, SimpleNamespace(), AsyncMock())
-    assert create.await_count == 3
+    assert create.await_count == 4
 
 
 @pytest.mark.asyncio

@@ -228,14 +228,14 @@ async def resolve_unlocated_meals(amap, day, protected_text=''):
             meal.location_note = '具体餐厅核实未完成，保留餐饮需求；请补充明确地点或稍后更新路线'
 
 
-def prepare_accommodation(itinerary, trip, only_day=None):
+def prepare_accommodation(itinerary, trip, only_day=None, *, tolerant=False, notices=None):
     if trip.confirmed_hotels:
         from .bookings import apply_hotel_anchors, validate_bookings
         validate_bookings(trip)
         for index, day in enumerate(itinerary.days):
             if only_day is None or index == only_day:
                 day.stops = [s for s in day.stops if s.kind != 'hotel' or s.booking_anchor]
-        apply_hotel_anchors(itinerary, trip, only_day)
+        apply_hotel_anchors(itinerary, trip, only_day, tolerant=tolerant, notices=notices)
         return
     # Old summaries can still assert a booked hotel after its route anchors disappear.
     if not trip.confirmed_hotel.strip() and re.search(r'住宿|酒店|宾馆', itinerary.summary):

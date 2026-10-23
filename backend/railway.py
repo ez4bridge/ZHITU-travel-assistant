@@ -1,6 +1,7 @@
 """Request-local railway options, with provider facts kept separate from model estimates."""
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import re
 from uuid import uuid4
 
 from .config import settings
@@ -176,6 +177,7 @@ class Railway:
                 continue
             selected_id = transfer.rail_option_id
             # Model assertions, including assertions copied from an old version, are not evidence.
+            suggested_code = (transfer.train_code or '').strip().upper()
             transfer.schedule_status = 'estimated'
             transfer.price_status = 'estimated'
             transfer.train_code = ''
@@ -188,7 +190,16 @@ class Railway:
             transfer.query_note = ''
             transfer.rail_option_id = ''
             if transfer.mode == 'flight':
-                transfer.query_note = '当前没有机票查询接口，时间与费用仅为规划估算；请外跳携程核对实际航班、机场、行李与含税全价。'
+                # No flight query interface exists. Keep a model-suggested flight
+                # number only as a clearly-labelled suggestion; never present it
+                # as queried evidence.
+                if re.fullmatch(r'[A-Z0-9]{2}\d{3,4}', suggested_code):
+                    transfer.train_code = suggested_code
+                    transfer.query_note = ('航班号来自模型建议，未向承运方核验；时间与费用为估算，'
+                                           '请外跳携程核对实际航班、机场、行李与含税全价。')
+                else:
+                    transfer.query_note = ('当前没有机票查询接口，时间与费用仅为规划估算；'
+                                           '航班号需自行选择，请外跳携程核对实际航班、机场、行李与含税全价。')
             if transfer.mode == 'train':
                 transfer.note = '交通时间与费用为估算；车票未预订，班次、余票及进出站接驳需确认'
             if transfer.mode != 'train' or not self.enabled:
@@ -219,8 +230,20 @@ class Railway:
                             candidate['departure_time']))
                     option = next(iter(candidates), None)
                 if not option:
-                    transfer.query_note = result['message'] if not result['options'] else '未找到符合当前活动时间窗口的车次，请调整出行时段'
-                    continue
+                    # Still report a real train: the user needs the 车次, not a
+                    # bare guessed time. Scheduling above adjusts the day to it.
+                    reserve = [candidate for candidate in self.query_cache.get(key, result)['options']
+                               if candidate['departure_time'] >= earliest and self.within_trip(candidate)]
+                    if reserve:
+                        option = reserve[0]
+                        fallback_note = ('这是已查到的真实班次；原草稿活动时间与该班次冲突，'
+                                         '行程已按班次重排。票价为参考价，未预订。')
+                    else:
+                        transfer.query_note = (result['message'] if not result['options']
+                                               else '未查到符合当前时段的车次，请调整出行时段或换乘方式')
+                        continue
+                else:
+                    fallback_note = ''
                 transfer.departure_date = date.fromisoformat(option['departure_date'])
                 transfer.arrival_date = date.fromisoformat(option['arrival_date'])
                 transfer.departure_time = option['departure_time']
@@ -234,13 +257,24 @@ class Railway:
                     transfer.unit_cost = Decimal(option['reference_price'])
                     transfer.basis = 'person'
                     transfer.price_status = 'reference'
-                transfer.note = '时刻与席位为查询时快照；票价为公布参考价或估算，未预订，进出站接驳需确认'
+                transfer.note = ('已查到的真实班次；原草稿活动时间与该班次冲突，行程已按班次重排。'
+                                 '票价为参考价，未预订，进出站接驳需确认') if fallback_note else \
+                                '时刻与席位为查询时快照；票价为公布参考价或估算，未预订，进出站接驳需确认'
+                if fallback_note:
+                    transfer.query_note = fallback_note
                 if first_origin:
                     transfer.query_note = ('首段按可出发时刻及默认30分钟进站预留筛选，不受模型初稿出发时间限制；'
                         '在本次已查且不与活动冲突的候选中优先较早到达，再比较时长与参考价。'
                         '当天已过时刻不推荐；住所到车站接驳、实际进站要求与余票仍须确认。')
             except Exception as error:
                 transfer.query_note = '铁路查询未完成，交通仍为估算：' + settings.safe_error(error)[:160]
+
+    def within_trip(self, option: dict) -> bool:
+        start = datetime.fromisoformat(option['departure_date'] + 'T' + option['departure_time'])
+        end = datetime.fromisoformat(option['arrival_date'] + 'T' + option['arrival_time'])
+        trip_start = datetime.combine(self.request.start_date, time.fromisoformat(self.request.start_time))
+        trip_end = datetime.combine(self.request.start_date + timedelta(days=self.request.days), time())
+        return trip_start <= start and end < trip_end
 
     def fits(self, option: dict, itinerary: Itinerary) -> bool:
         from .locality import parse_arrival_movement

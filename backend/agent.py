@@ -82,7 +82,14 @@ async def generate_itinerary(request, amap, emit, previous=None, instruction='',
     mode_name = {'auto': '自动比较真实可用路线，按地图通行时间选择最快方式，用户可逐段更换', 'walking': '步行', 'driving': '驾车', 'transit': '公交地铁', 'bicycling': '骑行', 'taxi': '打车'}[request.mode]
     cities = ' → '.join(request.city_route)
     journey = ' → '.join(request.journey_cities)
-    intercity_name = {'train': '铁路', 'flight': '飞机', 'bus': '长途汽车', 'driving': '自驾'}[request.intercity_mode]
+    modes = request.intercity_modes or [request.intercity_mode]
+    names = {'train': '铁路', 'flight': '飞机', 'bus': '长途汽车', 'driving': '自驾'}
+    intercity_name = '、'.join(dict.fromkeys(names[mode] for mode in modes))
+    mixed_scope = ''
+    if 'train' in modes and 'flight' in modes:
+        mixed_scope = ('用户同时接受铁路与飞机：必须按距离综合比较，不得默认只排铁路——'
+                       '直线约600公里以内优先铁路，1200公里以上优先飞机，600–1200公里比较估算耗时与票价后决定；'
+                       '每段在note里写明选择理由。')
     origin_scope = ('包含从出发城市开始的跨城交通。' if request.include_origin_transport else '未选择从出发地开始，仅规划目的地之间的交通。')
     return_scope = '最后返回出发城市。' if request.return_to_origin else '不安排额外返回出发地的交通。'
     stays = '；'.join(f'{stay.city}：{stay.preferred_days} 天' if stay.preferred_days is not None else f'{stay.city}：自动分配'
@@ -101,7 +108,7 @@ async def generate_itinerary(request, amap, emit, previous=None, instruction='',
 如交通导致偏好无法满足，在 summary 或 tips 解释冲突，不能声称已满足或偷偷缩短而不说明。
 search_places 每次指定一个目的地城市；get_route 只查询同城地点，不用步行路线代替跨城交通。
 完整交通顺序：{journey}。{origin_scope}{return_scope}
-跨城偏好：{intercity_name}。距离或客观条件不适合时可建议替代方式，但必须说明原因。
+跨城偏好：{intercity_name}。{mixed_scope}距离或客观条件不适合时可建议替代方式，但必须说明原因。
 在 transfers 单独列出每段跨城交通的出发/到达城市、日期、时间、方式和费用。
 {rail_instructions}
 为车站/机场接驳、候车、安检预留时间；跨城期间不能安排景点，跨午夜的交通使用不同到达日期。
@@ -205,7 +212,7 @@ transfers.basis=person 表示每人票价，group 表示全员该段总费用；
             '每天需给餐饮和景点费用，多日旅行除最后一天需住宿费用；全部价格都是估算。'
             'transfers 必须按完整交通顺序列全，时间不得与活动冲突，交通日期包含在旅行天数内。'
             'transfers 的费用不再写到 days[].expenses，避免重复计费。\n' + json.dumps(schema, ensure_ascii=False)}]
-        for attempt in range(2):
+        for attempt in range(3):
             response = await client.chat.completions.create(model=settings.llm_model, messages=json_messages,
                 response_format={'type': 'json_object'}, temperature=.2, max_tokens=min(16000, 3000 + request.days * 1500), **settings.model_options())
             content = response.choices[0].message.content or ''
@@ -221,7 +228,7 @@ transfers.basis=person 表示每人票价，group 表示全员该段总费用；
                     raise StayAllocationError(shortfall)
                 return itinerary
             except (ValidationError, ValueError) as error:
-                if attempt:
+                if attempt >= 2:
                     if isinstance(error, TransferCoverageError):
                         raise RuntimeError('模型未生成完整的跨城交通，往返费用无法完整计算，请重新规划。') from None
                     if isinstance(error, StayAllocationError):
@@ -229,7 +236,11 @@ transfers.basis=person 表示每人票价，group 表示全员该段总费用；
                         # the validator's stay warning tell the user.
                         return itinerary
                     raise RuntimeError('模型未生成有效的行程结构，请重试。') from None
-                await emit('status', {'message': '模型输出格式有误，正在修复一次'})
+                if isinstance(error, StayAllocationError) and attempt:
+                    return itinerary
+                message = ('模型输出格式有误，正在修复一次' if attempt == 0
+                           else '模型输出仍不完整，正在自动重新生成（第 3 次尝试）')
+                await emit('status', {'message': message})
                 # Error schema only; never leak provider credentials or exception response URLs.
                 detail = error.json(include_input=False)[:3000] if isinstance(error, ValidationError) else str(error)
                 if isinstance(error, StayAllocationError):

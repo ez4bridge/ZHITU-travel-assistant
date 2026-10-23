@@ -9,7 +9,7 @@ import type { Plan } from '../types'
 const props = defineProps<{ plan: Plan; disabled?: boolean }>()
 const emit = defineEmits<{ edit: []; jump: [target: { day_index?: number | null; stop_id?: string | null; target?: string }] }>()
 const summary = ref<PreparationSummary | null>(null), loading = ref(false), error = ref('')
-const collapsed = ref(false)
+const collapsed = ref(true)
 let controller: AbortController | null = null, sequence = 0
 const state = computed(() => summary.value ? preparationState(summary.value) : null)
 const title = computed(() => state.value ? preparationTitles[state.value] : loading.value ? '正在核对出行准备信息' : '出行准备状态待核对')

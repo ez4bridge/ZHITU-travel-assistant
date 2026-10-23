@@ -109,21 +109,26 @@ def test_regenerate_http_rejects_overfull_restored_payment_ledger_without_previe
             json=booking_body(parent, state, [hotel]).model_dump(mode='json'))
         assert response.status_code == 200, response.text
         result = response.json()
-        assert result['status'] == 'conflict', result
-        assert 'preview_id' not in result and 'plan' not in result
-        assert any('超过20项' in message for message in result['conflicts'])
+        # Supplement regeneration saves even when the restored ledger is large;
+        # the problem is reported instead of blocking the user's new version.
+        assert result['status'] == 'applied', result
+        assert any('已合并普通预算估算项' in message for message in result['notices'])
+        assert 'preview_id' not in result
+        applied = result['plan']
+        labels = [expense['label'] for day in applied['itinerary']['days'] for expense in day['expenses']]
+        assert '合成原已付款票务' in labels
         assert client.get('/api/health').json()['tasks']['booking_active'] == 0
 
-    assert len(results) == 1 and results[0]['status'] == 'conflict'
-    assert len(store.list()) == 1 and stored_bytes(storage, parent.id) == before
-    assert storage.state(parent) == state
+    assert len(results) == 1 and results[0]['status'] == 'ready'
+    assert len(store.list()) == 2
     with storage.connect() as db:
-        assert db.execute('SELECT count(*) FROM constraint_previews').fetchone()[0] == 0
-    first_day = result['candidate']['itinerary']['days'][0]
+        assert db.execute('SELECT count(*) FROM constraint_previews WHERE applied_plan_id IS NOT NULL').fetchone()[0] == 1
+    first_day = applied['itinerary']['days'][0]
     carried = [expense for expense in first_day['expenses'] if expense['label'] == paid.label]
     assert len(carried) == 1 and carried[0]['commitment'] == 'paid'
     assert Decimal(str(carried[0]['unit_cost'])) * carried[0]['quantity'] == Decimal('75.00')
-    assert len(first_day['expenses']) == 22  # 20 model estimates + one prior payment + hotel total.
+    # DayPlan.expenses is capped at 20: paid rows stay, planned estimates merge.
+    assert len(first_day['expenses']) <= 20
     assert all(expense['category'] != 'transport' for expense in first_day['expenses'])
-    assert all(route['mode'] == 'walking' for route in result['candidate']['routes'])
+    assert all(route['mode'] == 'walking' for route in applied['routes'])
     assert all(instance.closed for instance in amap.instances)

@@ -231,7 +231,9 @@ def ease_conflicting_transfers(itinerary, trip):
         transfer.rail_option_id = transfer.train_code = ''
         if transfer.price_status == 'reference':
             transfer.price_status = 'estimated'
-        transfer.note = ('原定班次与当天活动冲突，已顺延为规划估算；实际车次、余票与票价请重新查询。'
+        kind = '航班' if transfer.mode == 'flight' else '班次'
+        transfer.note = (f'原定{kind}与当天活动冲突，已顺延为规划估算；'
+                         f'实际{kind}与票价请自行核对。'
                          + (' ' + transfer.note if transfer.note else ''))[:500]
         eased.append(f'{transfer.from_city}→{transfer.to_city} 顺延为 {departure.strftime("%m-%d %H:%M")} 出发的估算班次')
     return eased
@@ -274,7 +276,7 @@ def _anchor(day, city, name, at, kind, role, ref):
         description='用户提供的已订信息；地点仍须高德核实，预订不由系统查验。')
 
 
-def apply_hotel_anchors(itinerary, trip, only_day=None):
+def apply_hotel_anchors(itinerary, trip, only_day=None, *, tolerant=False, notices=None):
     hotels = confirmed_hotels(trip)
     for index, day in enumerate(itinerary.days):
         if only_day is not None and index != only_day:
@@ -324,7 +326,12 @@ def apply_hotel_anchors(itinerary, trip, only_day=None):
                     if city_key(stop.city) == city_key(hotel.city)), len(day.stops))
             at = max(ready, minutes(old_departures.get(ref, clock(ready))))
             if at + 15 > 1439:
-                raise ValueError(f'第{index + 1}天到达后没有足够时间办理酒店寄存／入住，请调整到达日期或住宿安排')
+                message = f'第{index + 1}天到达后没有足够时间办理酒店寄存／入住，请调整到达日期或住宿安排'
+                if not tolerant:
+                    raise ValueError(message)
+                if notices is not None:
+                    notices.append(message + '；已保留原安排，当晚住宿需自行确认')
+                continue
             visit = _anchor(day, hotel.city, hotel.name, at, 'hotel', 'hotel_departure', ref)
             visit.end, visit.booking_address = clock(at + 15), hotel.address
             visit.description = ('抵达后先到酒店寄存行李／办理入住，先按15分钟预留；'
@@ -363,7 +370,18 @@ def apply_hotel_anchors(itinerary, trip, only_day=None):
         if morning and not evening:
             day.accommodation = f'从已填酒店「{morning.name}」出发；当天住宿／返程以实际安排为准。'
         if len(day.stops) > 12:
-            raise ValueError(f'第{index + 1}天加入酒店后超过12项，请先精简活动')
+            message = f'第{index + 1}天加入酒店后超过12项，请先精简活动'
+            if not tolerant:
+                raise ValueError(message)
+            # Planning-quality problem: trim model suggestions instead of failing.
+            while len(day.stops) > 12:
+                dropped = drop_last_optional_stop(itinerary, index)
+                if not dropped:
+                    break
+                if notices is not None:
+                    notices.append(f'第{index + 1}天活动过多，已移除：{dropped}')
+            if notices is not None and len(day.stops) > 12:
+                notices.append(f'第{index + 1}天加入酒店后仍有 {len(day.stops)} 项，请自行精简')
     # A known total replaces the covered nights' estimates once, never once per person/night.
     for hotel in hotels:
         if hotel.total_cost is None:

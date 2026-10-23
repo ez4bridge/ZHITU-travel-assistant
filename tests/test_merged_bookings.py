@@ -622,3 +622,27 @@ def test_hotel_checkout_is_placed_before_a_same_day_departure():
     apply_hotel_anchors(plan.itinerary, trip)
     hotel = next(stop for stop in day.stops if stop.booking_anchor == 'hotel_departure')
     assert hotel.start < '08:00'
+def test_bracketed_provider_address_still_matches_the_confirmed_hotel():
+    """Reported 2026-10-23: real hotel judged unmatched because Amap appends a bracket note."""
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from backend.amap import Amap
+    from backend.models import Stop
+
+    poi = {'id': 'B0J1G5B038', 'name': '杭州西湖武林广场环岛国际酒店',
+           'address': '环城西路92号(武林门地铁站A1口步行80米)', 'location': '120.15578,30.270195',
+           'type': '住宿服务;宾馆酒店', 'adname': '拱墅区', 'cityname': '杭州市'}
+
+    def resolve(address: str):
+        service = Amap('杭州市')
+        service.search = AsyncMock(return_value=[dict(poi)])
+        stop = Stop(id='h', name='杭州西湖武林广场环岛国际酒店', city='杭州市', kind='hotel',
+                    start='15:00', end='15:15', booking_anchor='hotel_return', booking_address=address)
+        asyncio.run(service.resolve(stop))
+        return stop
+
+    matched = resolve('浙江杭州拱墅区环城西路92号')
+    assert matched.location_status == 'verified' and matched.poi_id == 'B0J1G5B038'
+    mismatched = resolve('浙江杭州拱墅区环城西路88号')
+    assert mismatched.location_status != 'verified' and not mismatched.poi_id

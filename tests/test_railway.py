@@ -148,8 +148,11 @@ async def test_failures_are_cached_and_time_window_does_not_claim_verified(monke
         'date': railway.request.start_date, 'title': '活动',
         'stops': [{'id': 'a', 'name': '游玩', 'city': '北京', 'start': '09:30', 'end': '12:00'}]}).stops
     await railway.enrich(itinerary)
-    assert itinerary.transfers[0].schedule_status == 'estimated'
-    assert '时间窗口' in itinerary.transfers[0].query_note
+    # A real train number beats a bare guessed time: fall back to the provider
+    # row and let the schedule adjust around it.
+    assert itinerary.transfers[0].schedule_status == 'queried'
+    assert itinerary.transfers[0].train_code
+    assert '行程已按班次重排' in itinerary.transfers[0].query_note
 
 
 @pytest.mark.asyncio

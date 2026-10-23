@@ -233,7 +233,7 @@ async def test_malformed_model_json_gets_one_bounded_repair(monkeypatch, repair_
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
     research = SimpleNamespace(choices=[SimpleNamespace(message=ResearchMessage())])
     final = sample()[1].model_dump_json() if repair_succeeds else '{}'
-    complete = AsyncMock(side_effect=[research, response('{bad json'), response(final)])
+    complete = AsyncMock(side_effect=[research, response('{bad json'), response(final), response('{}')])
     class FakeClient:
         chat = SimpleNamespace(completions=SimpleNamespace(create=complete))
         async def __aenter__(self): return self
@@ -248,4 +248,6 @@ async def test_malformed_model_json_gets_one_bounded_repair(monkeypatch, repair_
     else:
         with pytest.raises(RuntimeError, match='有效的行程结构'):
             await agent.generate_itinerary(sample()[0], SimpleNamespace(), emit)
-    assert complete.await_count == 3  # research + invalid JSON + only one repair
+    # research + invalid JSON + repair attempts: one repair succeeds, otherwise
+    # an automatic third attempt is used before giving up.
+    assert complete.await_count == (3 if repair_succeeds else 4)

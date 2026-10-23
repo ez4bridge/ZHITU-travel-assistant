@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import base64
 import binascii
 import time
@@ -27,6 +27,7 @@ from .validation import minutes, validator
 from .cities import city_catalog
 from .railway import Railway
 from .planning import repair_schedule, recost_all
+from .intercity_choice import apply_advice
 from .locality import prepare_accommodation
 from .itinerary_evidence import bind_stop_expenses, audit_guides, normalize_ticket_quantities
 from .meals import align_meals, meal_schedule_checks
@@ -437,7 +438,7 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
             rail = Railway(trip, emit)
             stage = 'refresh' if refresh else 'agent'
             try:
-                async with asyncio.timeout(180):
+                async with asyncio.timeout(300):
                     effective_trip, study_context = trip, None
                     if trip.study and previous:
                         effective_trip = await update_study_request(trip, instruction, study_patch, knowledge, previous)
@@ -477,7 +478,9 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                                 if index != day_index:
                                     itinerary.days[index] = previous.itinerary.days[index].model_copy(deep=True)
                             itinerary.transfers = [t.model_copy(deep=True) for t in previous.itinerary.transfers]
+                        intercity_notes = []
                         if not refresh and day_index is None:
+                            intercity_notes = await apply_advice(itinerary, trip, amap)
                             await rail.enrich(itinerary)
                         if trip.booked_transports:
                             apply_booked_transports(itinerary, trip)
@@ -485,7 +488,8 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                         eased = ease_conflicting_transfers(itinerary, trip)
                         itinerary.guide_insights = [i for i in itinerary.guide_insights if i.source_index < len(trip.guides)]
                         prepare_transfer_anchors(itinerary, trip, prefer_user_bookings=bool(trip.booked_transports))
-                        prepare_accommodation(itinerary, trip, day_index)
+                        hotel_notices = []
+                        prepare_accommodation(itinerary, trip, day_index, tolerant=True, notices=hotel_notices)
                         moved += drop_movement_to_anchors(itinerary)
                         flow_notices = (prepare_arrival_flow(trip, itinerary, day_index, instruction)
                                         if not refresh else [])
@@ -552,7 +556,15 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                                 trimmed += removed
                                 conflicts, adjustments = repair_booking_schedule(shell, only_days=scope)
                             if conflicts:
-                                raise ValueError('加入车站／机场接驳后无法排出可执行日程：' + '；'.join(conflicts) + '。请减少活动或调整时间；未保存本次方案，已有版本保留。')
+                                hard = [message for message in conflicts
+                                        if '与已订交通／已确认时间冲突' in message or '时间无效' in message]
+                                if hard:
+                                    raise ValueError('你填写的固定安排之间互相冲突，无法排出可执行日程：'
+                                                     + '；'.join(dict.fromkeys(hard))
+                                                     + '。请调整已订交通或酒店日期；未保存本次方案，已有版本保留。')
+                                # Planning-quality residue: keep the plan and report it.
+                                adjustments += ['以下时间问题未能自动消除，已保存本版，请用“调整行程”处理：'
+                                                + '；'.join(dict.fromkeys(conflicts))]
                             if trimmed:
                                 adjustments += ['当天时间不足，已移除模型建议的活动：'
                                                 + '、'.join(dict.fromkeys(trimmed))
@@ -560,9 +572,9 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                             # Fixed anchors also need the meal windows repaired.
                             adjustments += align_meals(trip, itinerary, routes, day_index,
                                 f'{trip.preferences} {instruction}', respect_opening=True)
-                            adjustments = cost_adjustments + adjustments
+                            adjustments = cost_adjustments + adjustments + hotel_notices + intercity_notes
                         else:
-                            adjustments = cost_adjustments + repair_schedule(itinerary, routes, trip.start_time, only_day=day_index)
+                            adjustments = cost_adjustments + repair_schedule(itinerary, routes, trip.start_time, only_day=day_index) + hotel_notices + intercity_notes
                             adjustments += align_meals(trip, itinerary, routes, day_index, f'{trip.preferences} {instruction}', respect_opening=True)
                         meal_conflicts, meal_notices = meal_schedule_checks(trip, itinerary, routes, day_index,
                             f'{trip.preferences} {instruction}')
@@ -582,9 +594,9 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                             'intercity_overlap', 'intercity_activity_overlap',
                             'booking_departure_buffer', 'booking_arrival_buffer'}]
                         if temporal_errors:
-                            raise ValueError('行程仍有时间冲突，无法当天完成可执行安排：' +
-                                '；'.join(dict.fromkeys(item.message for item in temporal_errors)) +
-                                '。请减少活动或调整交通／活动时间；未保存本次方案，已有版本保留。')
+                            # Quality residue is reported, never used to discard the plan.
+                            adjustments += ['时间仍有冲突，已保存本版；请用“调整行程”把冲突活动或接驳挪开：'
+                                            + '；'.join(dict.fromkeys(item.message for item in temporal_errors))]
                     plan = PlanRecord(id=str(uuid4()), parent_id=previous.id if previous else None,
                         revision=previous.revision + 1 if previous else 1, created_at=datetime.now(timezone.utc),
                         request=effective_trip, itinerary=itinerary, routes=routes, validation=report, revision_instruction=instruction,
@@ -604,7 +616,7 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
             except asyncio.TimeoutError:
                 _metrics['failed'] += 1
                 _last_failure = {'stage': stage, 'type': 'TimeoutError', 'elapsed_s': round(monotonic() - started, 2)}
-                await emit('error', {'message': '本次规划超过 3 分钟，请减少天数后重试。旧方案仍然保留。'})
+                await emit('error', {'message': '本次规划超过 5 分钟，请减少天数后重试。旧方案仍然保留。'})
             except asyncio.CancelledError:
                 _metrics['cancelled'] += 1
                 raise
@@ -612,9 +624,11 @@ def stream_plan(request: Request, trip: TripRequest, previous=None, instruction=
                 _metrics['failed'] += 1
                 _last_failure = {'stage': stage, 'type': type(error).__name__,
                     'provider_code': getattr(error, 'provider_code', ''), 'path': getattr(error, 'path', ''),
-                    'category': getattr(error, 'code', ''), 'elapsed_s': round(monotonic() - started, 2)}
-                logging.getLogger(__name__).warning('planning_failed type=%s category=%s provider_code=%s path=%s',
-                    type(error).__name__, getattr(error, 'code', ''), getattr(error, 'provider_code', ''), getattr(error, 'path', ''))
+                    'category': getattr(error, 'code', ''), 'elapsed_s': round(monotonic() - started, 2),
+                    'message': settings.safe_error(error)[:300]}
+                logging.getLogger(__name__).warning('planning_failed type=%s message=%s category=%s provider_code=%s path=%s',
+                    type(error).__name__, settings.safe_error(error)[:200], getattr(error, 'code', ''),
+                    getattr(error, 'provider_code', ''), getattr(error, 'path', ''))
                 await emit('error', {'message': settings.safe_error(error)})
             finally:
                 _active_tasks -= 1

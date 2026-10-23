@@ -1,4 +1,4 @@
-"""Bounded user-booking preview/apply with existing CAS and confirmed-fact ledger."""
+﻿"""Bounded user-booking preview/apply with existing CAS and confirmed-fact ledger."""
 import asyncio
 from datetime import datetime, time, timezone
 from uuid import uuid4
@@ -133,6 +133,7 @@ def drop_unlocated_stops(itinerary, day_indices=None, *, protected=()):
 async def preview_bookings(plan, state, body, storage, *, amap_factory=Amap, regenerate=False, generator=None):
     trip, previous_start = booking_trip(plan, state, body)
     moved = []
+    intercity_notes = []
     if regenerate:
         guard_regeneration(plan, state)
         make = generator
@@ -140,9 +141,12 @@ async def preview_bookings(plan, state, body, storage, *, amap_factory=Amap, reg
             from .agent import generate_itinerary as make
         # A separate client for the agent tools; enrichment opens its own below.
         tools_map = amap_factory(trip.journey_cities)
+        intercity_notes = []
         try:
             generated = await make(trip, tools_map, _quiet_emit, previous=None,
                                    instruction=REGENERATE_INSTRUCTION, rail=None)
+            from .intercity_choice import apply_advice
+            intercity_notes = await apply_advice(generated, trip, tools_map)
         finally:
             await tools_map.close()
         clear_model_booking_claims(generated)
@@ -174,7 +178,8 @@ async def preview_bookings(plan, state, body, storage, *, amap_factory=Amap, reg
     # after the booking is applied to the matching transfer, so a queried
     # timetable alone can still never rewrite a model's station.
     prepare_transfer_anchors(candidate.itinerary, trip, prefer_user_bookings=True)
-    apply_hotel_anchors(candidate.itinerary, trip)
+    hotel_notices = []
+    apply_hotel_anchors(candidate.itinerary, trip, tolerant=True, notices=hotel_notices)
     moved += drop_movement_to_anchors(candidate.itinerary,
         protected_ids=protected_activity_ids(candidate.itinerary, state))
     if not regenerate:
@@ -184,7 +189,7 @@ async def preview_bookings(plan, state, body, storage, *, amap_factory=Amap, reg
                 day.date in (b.departure_date, b.arrival_date) for b in [*body.booked_transports, *plan.request.booked_transports]))
         if not affected and trip.confirmed_hotels == plan.request.confirmed_hotels and trip.booked_transports == plan.request.booked_transports:
             raise ValueError('补录内容没有变化，无需生成新版本')
-    flow_notices = []
+    flow_notices = list(hotel_notices) + list(intercity_notes)
     for index in affected:
         flow_notices += prepare_arrival_flow(trip, candidate.itinerary, index)
     completed_until = max((datetime.combine(day.date, time.fromisoformat(stop.end))
@@ -291,6 +296,23 @@ async def preview_bookings(plan, state, body, storage, *, amap_factory=Amap, reg
     finally:
         await amap.close()
 
+    # DayPlan.expenses is capped at 20; restoring a paid ledger must not create a
+    # record that cannot even be loaded later. Keep every paid/committed row and
+    # merge ordinary planned estimates instead.
+    merged_estimates = []
+    for index, day in enumerate(candidate.itinerary.days):
+        if len(day.expenses) <= 20:
+            continue
+        def protected(expense):
+            return expense.commitment in ('paid', 'committed') or bool(expense.booking_ref)
+        kept = [expense for expense in day.expenses if protected(expense)][:20]
+        planned = [expense for expense in day.expenses if not protected(expense)]
+        room = max(0, 20 - len(kept))
+        day.expenses = kept + planned[:room]
+        merged_estimates.extend(expense.label for expense in planned[room:])
+    if merged_estimates:
+        candidate.validation = await validator.validate(trip, candidate.itinerary, candidate.routes)
+
     # Final checks are deliberately outside the healing loop. No retry can erase
     # a previously detected completed/locked/window/paid-fact violation.
     unlocated_anchor_errors = fixed_unknown_errors(candidate, state)
@@ -326,6 +348,21 @@ async def preview_bookings(plan, state, body, storage, *, amap_factory=Amap, reg
         notices.append('已移除酒店的原填费用仍保留在预算；系统不会据此假定已经退款。')
     if any(not b.arrival_place or not b.departure_place for b in body.booked_transports):
         notices.append('部分站点／机场未填写：已应用时刻和预留时间，但未核实缺失端点的接驳，请补全。')
+    if merged_estimates:
+        notices.append('为保留全部已付／承诺费用，已合并普通预算估算项：'
+                       + '、'.join(dict.fromkeys(merged_estimates)) + '；已付金额未删除。')
+    if regenerate:
+        # The supplement flow must always hand back a new version: quality
+        # problems are reported, never used to block the user's regeneration.
+        budget_error = next((error for error in candidate.validation.errors if error.code == 'over_budget'), None)
+        if budget_error:
+            notices.append(f'估算总费用 ¥{candidate.validation.total_cents / 100:.2f} 超过全员预算 '
+                           f'¥{candidate.validation.budget_cents / 100:.2f}；本版已照常保存，'
+                           '可在预算明细里调整预算或删减项目。')
+        if conflicts:
+            notices.append('以下问题本次未能自动处理，已按“先保存、后核对”保留提示：'
+                           + '；'.join(dict.fromkeys(conflicts)))
+            conflicts = []
     changes = [f'补录{len(body.confirmed_hotels)}段酒店入住、{len(body.booked_transports)}段已订交通；重新核对{len(affected)}天', *changes]
     if trip.start_time != previous_start:
         changes.insert(0, f'首日开始{previous_start}→{trip.start_time}，适配你填写的已订交通与出发前预留时间')
@@ -412,7 +449,7 @@ def install_booking_routes(app, store_getter):
     @app.post('/api/plans/{plan_id}/booking-regenerate')
     async def booking_regenerate(plan_id: str, body: BookingPreviewRequest, request: Request):
         # A model run plus the map pass needs more than the 90s re-time budget.
-        response = await serve_preview(plan_id, body, request, regenerate=True, seconds=300,
+        response = await serve_preview(plan_id, body, request, regenerate=True, seconds=420,
             failure='本次整份重新生成未完成（模型或地图超时）；原行程未修改，请稍后重试')
         # Full regeneration saves immediately: the user asked for a new plan,
         # not another confirmation step. Conflicts still come back untouched.

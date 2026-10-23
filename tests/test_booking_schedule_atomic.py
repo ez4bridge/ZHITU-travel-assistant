@@ -179,10 +179,11 @@ def test_ordinary_revise_failure_never_saves_mixed_schedule(tmp_path, monkeypatc
         assert len(store.list()) == 1
         assert store.get(previous.id).model_dump_json() == before
     else:
-        # Otherwise the day is trimmed to a consistent schedule instead of a
-        # half-applied one; the removal is recorded for the user.
+        # Otherwise the plan is saved as-is (quality problems are reported, not
+        # used to discard the generation); the problem stays visible.
         assert 'event: result' in response.text
         assert len(store.list()) == 2
         latest = max(store.list(), key=lambda item: item['revision'])
         saved_plan = store.get(latest['id'])
-        assert any('已移除模型建议的活动' in item for item in saved_plan.adjustments)
+        assert any('已移除模型建议的活动' in item or '未能自动消除' in item or '时间仍有冲突' in item
+                   for item in saved_plan.adjustments)

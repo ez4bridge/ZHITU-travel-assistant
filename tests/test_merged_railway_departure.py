@@ -112,9 +112,11 @@ async def test_valid_option_id_never_bypasses_activity_fit_on_other_legs():
     itinerary.transfers[0].rail_option_id = row['option_id']
     itinerary.days[0].stops = [Stop(name='原定上午景点', city='长沙', start='09:30', end='12:00')]
     await railway.enrich(itinerary)
-    assert itinerary.transfers[0].schedule_status == 'estimated'
-    assert not itinerary.transfers[0].train_code
-    assert '时间窗口' in itinerary.transfers[0].query_note
+    # A conflicting activity no longer hides the real train: use the queried row
+    # and let scheduling move the day around it.
+    assert itinerary.transfers[0].schedule_status == 'queried'
+    assert itinerary.transfers[0].train_code == 'SYN-overlap'
+    assert '行程已按班次重排' in itinerary.transfers[0].query_note
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,7 @@
 ﻿"""Full regeneration with user bookings as fixed facts; offline model double."""
 import asyncio
 from datetime import timedelta
+from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -148,3 +149,21 @@ def test_regenerate_route_passes_conflicts_back_without_saving(tmp_path, monkeyp
         assert response.json()['status'] == 'conflict'
         assert seen == [True]
         assert len(store.list()) == 1
+def test_regeneration_with_over_budget_saves_anyway_and_reports(tmp_path):
+    """Reported 2026-10-23: budget overrun blocked the supplement regeneration."""
+    plan = mixed_plan()
+    plan.request.budget = Decimal('1')
+    plan.itinerary.days[0].expenses.append(Expense(label='合成门票', category='ticket',
+                                                   unit_cost='500', stop_id=plan.itinerary.days[0].stops[0].id))
+    store, plan, storage, state = setup_booking(tmp_path, plan)
+
+    async def generate(request, amap, emit, previous=None, instruction='', rail=None):
+        return plan.itinerary.model_copy(deep=True)
+
+    result = asyncio.run(preview_bookings(plan, state, booking_body(plan, state, [hotel()], [train()]),
+        storage, amap_factory=RegenerateMap, regenerate=True, generator=generate))
+    assert result['status'] == 'ready', result.get('conflicts')
+    assert result['preview_id']
+    assert any('超过全员预算' in notice for notice in result['notices'])
+    child = storage.apply(plan.id, result['preview_id'])
+    assert any(error.code == 'over_budget' for error in child.validation.errors)

@@ -110,6 +110,7 @@ class Amap:
         self._route_locks = {}
         self._route_failures = {}
         self._transit_anchors = {}
+        self._city_points = {}
         self._slots = asyncio.Semaphore(3)
         self.client = httpx.AsyncClient(timeout=15, trust_env=False)
 
@@ -179,6 +180,25 @@ class Amap:
                 raise MapServiceError('map_network', '地图服务网络暂时不可用，请稍后刷新路线。') from None
             except (httpx.HTTPStatusError, ValueError, KeyError):
                 raise MapServiceError('map_response', '地图服务响应异常，请稍后刷新路线。') from None
+
+    async def city_point(self, city: str):
+        """City-level geocode for comparing intercity options (not a POI claim)."""
+        name = (city or '').strip()
+        if not name:
+            return None
+        if name in self._city_points:
+            return self._city_points[name]
+        point = None
+        try:
+            data = await self.request('/v3/geocode/geo', {'address': name, 'city': name})
+            geocodes = data.get('geocodes') or []
+            if geocodes:
+                longitude, latitude = str(geocodes[0].get('location', '')).split(',')
+                point = (float(latitude), float(longitude))
+        except Exception:
+            point = None
+        self._city_points[name] = point
+        return point
 
     def canonical_city(self, city: str = '') -> str:
         if not city and len(self.cities) == 1:
@@ -300,10 +320,22 @@ class Amap:
         if booking_address and getattr(stop, 'booking_anchor', '') in ('hotel_departure', 'hotel_return'):
             # User-supplied address narrows real provider results; it never
             # supplies coordinates or makes an unmatched hotel verified.
-            normalize = lambda value: re.sub(r'[\s，,。\-（）()]', '', value)
+            def normalize(value: str) -> str:
+                # Provider addresses append directions in brackets, e.g.
+                # "环城西路92号(武林门地铁站A1口步行80米)"; compare street part only.
+                plain = re.sub(r'[（(][^）)]*[）)]', '', value or '')
+                return re.sub(r'[\s，,。\-（）()]', '', plain)
+
+            def same_street(provider: str, supplied: str) -> bool:
+                provider, supplied = normalize(provider), normalize(supplied)
+                if len(provider) < 4 or not supplied:
+                    return False
+                # One address is usually the other plus province/city prefix or
+                # provider-side bracket note; anything else is a different street.
+                return provider in supplied or supplied in provider
+
             expected = normalize(booking_address)
-            candidates = [p for p in candidates if len(normalize(p.get('address', ''))) >= 4
-                          and (normalize(p['address']) in expected or expected in normalize(p['address']))]
+            candidates = [p for p in candidates if same_street(p.get('address', ''), expected)]
             if not candidates:
                 stop.poi_id = ''
                 stop.location_note = '酒店名称与所填地址尚未匹配到同一真实POI，请补充完整分店名或核对地址'
