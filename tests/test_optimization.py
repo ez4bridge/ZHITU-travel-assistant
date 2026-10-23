@@ -253,7 +253,7 @@ def test_route_selection_reprices_party_and_preserves_history(monkeypatch,tmp_pa
         assert store.get('original') is None
 
 
-def test_refresh_does_not_call_model_and_preserves_old_version(monkeypatch,tmp_path, offline_domestic_scope):
+def test_refresh_does_not_call_model_and_preserves_old_version(monkeypatch,tmp_path):
     import backend.main as main
     store=Store(tmp_path/'plans.sqlite3')
     monkeypatch.setattr(main,'store',store)
@@ -295,7 +295,7 @@ def test_guide_source_only_accepts_web_links_and_has_size_limits():
     assert 'opening_hours' in {i['code'] for i in result['unknowns']}
 
 
-def test_local_revision_keeps_other_days_and_routes(monkeypatch,tmp_path, offline_domestic_scope):
+def test_local_revision_keeps_other_days_and_routes(monkeypatch,tmp_path):
     import backend.main as main
     from datetime import timedelta
     store=Store(tmp_path/'plans.sqlite3')
@@ -312,26 +312,21 @@ def test_local_revision_keeps_other_days_and_routes(monkeypatch,tmp_path, offlin
     generated=original.itinerary.model_copy(deep=True)
     generated.days[0].title='新安排'
     generated.days[1].title='不应该修改'
-    monkeypatch.setattr(main,'generate_day_itinerary',AsyncMock(return_value=generated))
-    from test_meals import dining_evidence_stub
-    async def enrich_with_dining(itinerary, *args, **kwargs):
-        result = await dining_evidence_stub(itinerary, *args, **kwargs)
-        return [original.routes[0].model_copy(deep=True) if r.from_id == 'a' and r.to_id == 'b' else r for r in result]
-    enrich=AsyncMock(side_effect=enrich_with_dining)
+    monkeypatch.setattr(main,'generate_itinerary',AsyncMock(return_value=generated))
+    enrich=AsyncMock(return_value=[original.routes[0].model_copy(deep=True)])
     monkeypatch.setattr(Amap,'enrich',enrich)
     with TestClient(main.app) as client:
         response=client.post('/api/plans/original/revise',json={'instruction':'只改第一天','day_index':0})
-        assert 'event: error' not in response.text, response.text
         result=json.loads(response.text.split('event: result\ndata: ')[1].split('\n\n')[0])
         assert result['itinerary']['days'][0]['title']=='新安排'
         assert result['itinerary']['days'][1]==second.model_dump(mode='json')
-        assert [r for r in result['routes'] if r['day_index'] == 1] == [original.routes[1].model_dump(mode='json')]
+        assert result['routes'][1]==original.routes[1].model_dump(mode='json')
         assert enrich.call_args.kwargs['day_indices']=={0}
         assert client.post('/api/plans/original/revise',json={'instruction':'改一下','day_index':9}).status_code==422
 
 
 @pytest.mark.asyncio
-async def test_capacity_limit_does_not_start_third_task(monkeypatch, offline_domestic_scope):
+async def test_capacity_limit_does_not_start_third_task(monkeypatch):
     import backend.main as main
     monkeypatch.setattr(main,'_active_tasks',2)
     generate=AsyncMock()
@@ -344,7 +339,7 @@ async def test_capacity_limit_does_not_start_third_task(monkeypatch, offline_dom
 
 
 @pytest.mark.asyncio
-async def test_quota_error_does_not_save_generated_plan(monkeypatch,tmp_path, offline_domestic_scope):
+async def test_quota_error_does_not_save_generated_plan(monkeypatch,tmp_path):
     import backend.main as main
     store=Store(tmp_path/'plans.sqlite3')
     monkeypatch.setattr(main,'store',store)

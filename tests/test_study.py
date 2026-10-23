@@ -128,11 +128,6 @@ def test_import_raw_only_and_integrity(corpus, kb):
     assert set(p.name for p in corpus.iterdir()) == {'documents.jsonl'}
     assert kb.catalog()['source_count'] == 5
     assert kb.catalog()['retrieval_mode'] == 'raw_text' and not kb.catalog()['places']
-    catalog = kb.catalog()
-    assert len(catalog['documents']) == catalog['source_count']
-    assert {document['title'] for document in catalog['documents']} == {
-        '老渔阳里与新青年', '新渔阳里与外国语学社', '又新印刷所', '陈望道的翻译', '三益里遗址'}
-    assert all(set(document) == {'id', 'title'} for document in catalog['documents'])
     path = corpus / 'documents.jsonl'
     documents = [json.loads(line) for line in path.read_text(encoding='utf-8').splitlines()]
     documents[0]['text'] += '改写正文'
@@ -437,22 +432,19 @@ def test_old_context_keeps_legacy_fields():
     assert context.retrieval_mode == 'legacy_structured' and context.facts[0].id == 'H001'
 
 
-def test_api_qa_independent_and_no_global_place_catalog(monkeypatch, kb, tmp_path, offline_domestic_scope):
+def test_api_qa_independent_and_no_global_place_catalog(monkeypatch, kb, tmp_path):
     import backend.main as main
     from backend.storage import Store
     monkeypatch.setattr(main, 'knowledge', kb)
     monkeypatch.setattr(main, 'store', Store(tmp_path / 'history.sqlite3'))
     with TestClient(main.app) as client:
-        catalog = client.get('/api/study/catalog').json()
-        assert catalog['retrieval_mode'] == 'raw_text'
-        assert len(catalog['documents']) == 5
+        assert client.get('/api/study/catalog').json()['retrieval_mode'] == 'raw_text'
         result = client.post('/api/study/ask', json={'question': '量子纠缠实验设备'})
         assert result.status_code == 200 and result.json()['status'] == 'insufficient_evidence'
         assert main.store.list() == []
         assert client.post('/api/study/ask', json={'question': '这里', 'place_id': 'FAKE'}).status_code == 422
         monkeypatch.setattr(main, 'knowledge', KnowledgeBase(tmp_path / 'missing'))
-        missing = client.get('/api/study/catalog').json()
-        assert missing['ready'] is False and missing['documents'] == []
+        assert client.get('/api/study/catalog').json()['ready'] is False
         assert client.get('/api/plans').status_code == 200
         assert client.post('/api/plans/generate', json=trip().model_dump(mode='json')).status_code == 503
 

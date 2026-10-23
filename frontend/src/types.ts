@@ -1,3 +1,4 @@
+import type { ConfirmedHotel, BookedTransport } from './bookingTypes'
 export type Mode = 'walking' | 'driving' | 'transit' | 'bicycling' | 'taxi'
 export interface PlanningGuideSource { title: string; url?: string; text: string; published_date?: string | null }
 export type IntercityMode = 'train' | 'flight' | 'bus' | 'driving'
@@ -30,7 +31,6 @@ export interface StudyStop {
 }
 export interface StudyCatalog {
   ready: boolean; message: string; corpus_version: string; source_count: number; fact_count: number; topics: string[]
-  documents?: { id: string; title: string }[]
   places: { id: string; name: string; candidate_group: string; routable: boolean }[]
   retrieval_mode?: 'raw_text'; chunk_count?: number
   retrieval?: {
@@ -67,17 +67,19 @@ export interface TripRequest {
   origin: string; destination: string; start_date: string; start_time: string
   days: number; style: 'relaxed' | 'balanced' | 'compact'; budget: number | string
   people: number; mode: Mode | 'auto'; preferences: string
-  intercity_mode: IntercityMode; include_origin_transport: boolean; return_to_origin: boolean
+  intercity_mode: IntercityMode; intercity_modes?: IntercityMode[]; include_origin_transport: boolean; return_to_origin: boolean
   destinations: DestinationStay[]
   study?: StudyOptions | null
   guides?: PlanningGuideSource[]; compare_modes?: boolean
   confirmed_hotel?: string
+  confirmed_hotels?: ConfirmedHotel[]; booked_transports?: BookedTransport[]
   guide_mode?: 'prefer' | 'inspiration'
 }
 export interface Stop {
   id: string; name: string; kind: 'sight' | 'meal' | 'hotel' | 'break'
   city: string
   study?: StudyStop | null
+  booking_anchor?: '' | 'hotel_departure' | 'hotel_return' | 'transport_departure' | 'transport_arrival'
   start: string; end: string; description: string; poi_id: string
   address: string; location: [number, number] | null; matched_name: string
   location_status: 'verified' | 'unknown'; location_note: string
@@ -92,9 +94,10 @@ export interface Expense {
   label: string; category: string; unit_cost: string | number; quantity: number
   basis: 'person' | 'group'; estimated: true; note: string
   stop_id?: string
+  booking_ref?: string; commitment?: 'planned' | 'committed' | 'paid'
 }
 export interface DayPlan {
-  date: string; title: string; stops: Stop[]; expenses: Expense[]; accommodation: string; meal_note?: string
+  date: string; title: string; stops: Stop[]; expenses: Expense[]; accommodation: string; meal_note?: string; tips?: string[]
 }
 export interface RouteLeg {
   day_index: number; from_id: string; to_id: string; mode: Mode; available: boolean
@@ -110,7 +113,8 @@ export interface CityTransfer {
   from_city: string; to_city: string; departure_date: string; departure_time: string
   arrival_date: string; arrival_time: string; mode: IntercityMode
   unit_cost: string | number; basis: 'person' | 'group'; estimated: true; note: string
-  rail_option_id: string; schedule_status: 'estimated' | 'queried'; price_status: 'estimated' | 'reference'
+  rail_option_id: string; schedule_status: 'estimated' | 'queried'; price_status: 'estimated' | 'reference' | 'user_reported'
+  booking_status?: 'unconfirmed' | 'user_confirmed'
   train_code: string; departure_station: string; arrival_station: string
   seat_type: string; seat_availability: string; queried_at: string | null; source: string; query_note: string
 }

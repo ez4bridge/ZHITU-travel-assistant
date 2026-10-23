@@ -50,12 +50,17 @@ def saved(p, text='已保存的参考'):
 @pytest.mark.parametrize('url,kind', [
     ('https://www.shanghai.gov.cn/a', 'official'), ('https://library.sh.cn/a', 'official'),
     ('https://m.ctrip.com/a', 'guide'), ('https://www.mafengwo.cn/a', 'guide'),
-    ('https://www.thepaper.cn/a', 'public'), ('https://zh.wikipedia.org/a', None),
+    ('https://www.thepaper.cn/a', 'public'), ('https://zh.wikipedia.org/a', 'public'),
+    ('https://paper.ce.cn/a', 'public'), ('https://www.gmw.cn/a', 'public'),
+    ('https://museum-travel.com/a', 'public'), ('https://gov.cn.evil.com/a', 'public'),
     ('https://gov.cn.evil.example/a', None), ('http://127.0.0.1/a', None),
+    ('http://192.168.1.1/a', None), ('http://169.254.169.254/a', None),
+    ('http://[::1]/a', None), ('http://localhost/a', None), ('http://museum.local/a', None),
+    ('http://2130706433/a', None), ('http://0177.0.0.1/a', None),
     ('https://user:password@www.shanghai.gov.cn/a', None), ('https://www.shanghai.gov.cn:123/a', None),
     (None, None), ('javascript:alert(1)', None),
 ])
-def test_sources_are_explicit_domains_with_no_arbitrary_fetch(url, kind):
+def test_public_sources_are_open_but_official_labels_and_url_safety_are_preserved(url, kind):
     assert guide.source_kind(url) == kind
 
 
@@ -86,6 +91,17 @@ def test_guide_matches_real_place_without_activity_or_map_anchor_labels():
     assert guide.relevant('合肥包公园景点介绍和参观安排。', legacy, '合肥市')
 
 
+def test_common_place_names_and_combined_activities_require_city_context():
+    stop = SimpleNamespace(name='城市记忆纪念塔与滨江公园', place_name='临海市人民城市记忆纪念塔')
+    assert guide.relevant('临海城市记忆纪念塔的建筑与参观介绍。', stop, '临海市')
+    assert guide.relevant('临海滨江公园的入口与步道。', stop, '临海市')
+    assert guide.relevant('临海城市记忆纪念塔的建筑介绍。',
+                          SimpleNamespace(name='临海市人民城市记忆纪念塔'), '临海市')
+    assert not guide.relevant('其他城市的城市记忆纪念塔建筑介绍。', stop, '临海市')
+    assert not guide.relevant('其他城市的滨江公园入口。', stop, '临海市')
+    assert not guide.relevant('临海博物馆开放信息。', stop, '临海市')
+
+
 @pytest.mark.asyncio
 async def test_search_fetch_caps_identity_and_no_summary_as_evidence(monkeypatch):
     monkeypatch.setattr(guide.settings, 'guide_search_key', 'fake-key')
@@ -98,19 +114,20 @@ async def test_search_fetch_caps_identity_and_no_summary_as_evidence(monkeypatch
                 {'title': '上海青年历史纪念馆', 'url': 'https://example.gov.cn/a', 'summary': '不要将摘要当作正文'},
                 {'title': '同名其他城市纪念馆', 'url': 'https://example.gov.cn/b', 'content': '其他城市的博物馆介绍。' * 30},
                 {'title': '攻略', 'url': 'https://www.mafengwo.cn/c', 'content': ('上海青年历史纪念馆入口位于正门，可按楼层参观。' * 80)},
-                {'title': '维基', 'url': 'https://zh.wikipedia.org/a', 'content': '不可采用' * 40}]})
+                {'title': '公开百科', 'url': 'https://zh.wikipedia.org/a', 'content': '上海青年历史纪念馆的建筑及历史介绍。' * 10}]})
         return httpx.Response(200, json={'content': '上海青年历史纪念馆周二至周日开放，入口位于正门。' * 80})
     calls = {'web_calls': []}
     p = plan()
     async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
         result = await guide.GuideService().sources(http, calls, p, p.itinerary.days[0].stops[0])
-    assert len(result) == 2
+    assert len(result) == 3
     assert all(len(s['text']) <= 900 for s in result)
     assert sum(len(s['text']) for s in result) <= 3600
     assert not any('不要将摘要当作正文' in s['text'] for s in result)
     assert sum(path.endswith('search') for path, _ in bodies) == 2
     assert sum(path.endswith('fetch') for path, _ in bodies) == 1
-    assert all('维基' not in s['title'] for s in result)
+    assert any(s['url'] == 'https://zh.wikipedia.org/a' and s['kind'] == 'public' for s in result)
+    assert all('site:' not in payload['query'] for path, payload in bodies if path.endswith('search'))
     assert all('api' not in str(payload) for _, payload in bodies)
 
 
@@ -128,6 +145,20 @@ def model_client(monkeypatch, output, captured):
     monkeypatch.setattr(guide, 'AsyncOpenAI', lambda **_: Client())
     monkeypatch.setattr(guide.settings, 'llm_key', 'fake-model')
     monkeypatch.setattr(guide.settings, 'guide_search_key', 'fake-search')
+
+
+@pytest.mark.asyncio
+async def test_failed_search_reports_network_failure_without_calling_model(monkeypatch):
+    captured, p = [], plan()
+    model_client(monkeypatch, draft(), captured)
+    client_factory = httpx.AsyncClient
+    def fail(request):
+        raise httpx.ConnectError('network unavailable', request=request)
+    monkeypatch.setattr(guide.httpx, 'AsyncClient', lambda **kwargs:
+                        client_factory(transport=httpx.MockTransport(fail), **kwargs))
+    result = await guide.GuideService().generate(p, p.itinerary.days[0].stops[0], p.request.start_date)
+    assert result.status == 'unavailable' and '联网搜索未成功' in result.message
+    assert result.usage['search_calls'] == 2 and not captured
 
 
 @pytest.mark.asyncio

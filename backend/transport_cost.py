@@ -12,7 +12,8 @@ BEIJING_BIKE = 'https://item.btime.com/f32s19nb9ns8n19b9rshfrkqlgj'
 
 
 def money(value: Decimal) -> Decimal:
-    return value.quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
+    # Provider/stored values occasionally arrive as int; never crash a preview.
+    return Decimal(str(value)).quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
 
 
 def estimate_cost(route, city: str, stay_minutes: int = 0) -> TransportCost | None:

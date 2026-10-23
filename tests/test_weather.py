@@ -207,7 +207,7 @@ async def test_regular_agent_receives_weather_without_extra_model_round(monkeypa
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('study', [False, True])
-async def test_generate_revise_history_and_recheck_share_server_snapshot(study, monkeypatch, tmp_path, offline_domestic_scope):
+async def test_generate_revise_history_and_recheck_share_server_snapshot(study, monkeypatch, tmp_path):
     import backend.main as main
     from backend.amap import Amap
     from backend.models import StudyContext
@@ -230,13 +230,7 @@ async def test_generate_revise_history_and_recheck_share_server_snapshot(study, 
         return sample()[1]
     async def study_plan(request, knowledge, amap, emit, validator, previous=None, instruction='', weather=None, rail=None, weather_by_city=None):
         itinerary = await regular(request, amap, emit, previous, instruction, weather)
-        from backend.models import StudyFact, StudySource, StudyStop
-        context = StudyContext(corpus_version='test',
-            facts=[StudyFact(id='fact', title='资料', text='测试资料', source_ids=['source'])],
-            sources=[StudySource(id='source', title='来源', url='https://example.cn/source')])
-        for stop in itinerary.days[0].stops:
-            stop.study = StudyStop(place_id=stop.id, fact_ids=['fact'])
-        return itinerary, sample()[2], context, await validator.validate(request,itinerary,sample()[2], context)
+        return itinerary, sample()[2], StudyContext(corpus_version='test'), await validator.validate(request,itinerary,sample()[2])
     monkeypatch.setattr(main, 'generate_itinerary', regular)
     monkeypatch.setattr(main, 'generate_study_plan', study_plan)
     monkeypatch.setattr(main, 'update_study_request', AsyncMock(side_effect=lambda request,*_: request))

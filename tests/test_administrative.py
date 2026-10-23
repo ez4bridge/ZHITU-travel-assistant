@@ -4,7 +4,7 @@ import pytest
 
 from backend.administrative import AdministrativeMatchError, contains_place, select_division
 from backend.amap import Amap, MapServiceError
-from backend.models import TripRequest
+from backend.models import Stop, TripRequest
 from backend.weather import SHANGHAI, WeatherService
 from datetime import datetime
 from test_weather import forecast
@@ -26,8 +26,9 @@ def test_generic_official_suffixes(name, official, code, level):
 
 def test_ambiguous_short_name_and_explicit_admin_types_do_not_mix():
     rows = [district('长沙市', '430100', 'city'), district('长沙县', '430121')]
-    with pytest.raises(AdministrativeMatchError):
-        select_division('长沙', {'count': '2', 'districts': rows})
+    # The destination list is city-level, so a same-named county does not make
+    # the city ambiguous (reported 2026-10-22: 长沙 resolved nothing at all).
+    assert select_division('长沙', {'count': '2', 'districts': rows})['adcode'] == '430100'
     assert select_division('长沙县', {'count': '2', 'districts': rows})['adcode'] == '430121'
     with pytest.raises(AdministrativeMatchError):
         select_division('长沙市', {'count': '1', 'districts': [rows[1]]})
@@ -35,6 +36,35 @@ def test_ambiguous_short_name_and_explicit_admin_types_do_not_mix():
         select_division('朝阳区', {'count': '2', 'districts': [district('朝阳区', '110105'), district('朝阳区', '220104')]})
     with pytest.raises(AdministrativeMatchError):
         select_division('阳朔', {'count': '30', 'districts': [district('阳朔县', '450321')]})
+
+
+@pytest.mark.asyncio
+async def test_station_alias_picks_the_airport_itself_not_its_terminals():
+    client = Amap('上海')
+    items = [
+        {'id': 'air', 'name': '上海浦东国际机场', 'adcode': '310115', 'adname': '浦东新区',
+         'type': '交通设施服务;机场相关;飞机场', 'location': '121.8,31.1', 'address': '迎宾大道6000号'},
+        {'id': 't2', 'name': '上海浦东国际机场2号航站楼', 'adcode': '310115', 'adname': '浦东新区',
+         'type': '交通设施服务;机场相关;飞机场', 'location': '121.81,31.15', 'address': '纬一路100号'},
+        {'id': 't2d', 'name': '上海浦东国际机场2号航站楼(国内出发)', 'adcode': '310115', 'adname': '浦东新区',
+         'type': '交通设施服务;机场相关;机场出发/到达', 'location': '121.82,31.16', 'address': '纬一路100号'}]
+
+    async def request(path, params):
+        if path == '/v3/config/district':
+            return {'count': '1', 'districts': [district('上海市', '310000', 'province')]}
+        assert params['keywords'] == '浦东机场'
+        return {'pois': items}
+
+    client.request = AsyncMock(side_effect=request)
+    stop = Stop(id='anchor', name='浦东机场', place_name='浦东机场', city='上海', kind='break',
+                start='09:00', end='09:05', booking_anchor='transport_arrival')
+    try:
+        await client.resolve(stop)
+        assert stop.location_status == 'verified' and stop.matched_name == '上海浦东国际机场'
+        assert stop.poi_id == 'air' and stop.location == (121.8, 31.1)
+        assert '航站楼' in stop.location_note and '未核实' in stop.location_note
+    finally:
+        await client.close()
 
 
 def test_code_scope_prevents_same_name_elsewhere_and_accepts_city_children():

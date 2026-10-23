@@ -1,6 +1,5 @@
 """Provider-backed opening references and real regional routing anchors."""
 import re
-import asyncio
 import secrets
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -32,21 +31,13 @@ def wants_area(stop):
 
 
 async def detail(amap, poi_id, city):
-    if not hasattr(amap, 'place_detail_locks'):
-        amap.place_detail_locks = {}
-    lock = amap.place_detail_locks.setdefault((city_key(city), poi_id), asyncio.Lock())
-    async with lock:
-        return await _detail(amap, poi_id, city)
-
-
-async def _detail(amap, poi_id, city):
     cache = getattr(amap, 'place_details', None)
     if cache is None:
         cache = amap.place_details = {}
     key = (city_key(city), poi_id)
     if key in cache:
         return cache[key]
-    if len(cache) >= 200:
+    if len(cache) >= 40:
         return None
     # Cache optional failures too: do not retry an unsupported capability per stop.
     cache[key] = None
@@ -154,15 +145,9 @@ async def enrich_place(amap, stop, previous_anchor=''):
             stop.matched_name = f'{parent.get("name", stop.name)}（地图入口）'
             stop.anchor_note = '未返回适合的区域子地点，使用高德明确提供的入口；没有随机生成区域坐标'
         elif explicit:
-            street_point = coordinate(parent.get('location'))
-            if street_point and stop.kind in ('sight', 'break') and re.search(r'(?:路|街|广场)(?:景区|区域)?$', parent.get('name', '')):
-                stop.location = street_point
-                stop.matched_name = parent['name'] + '（街区通勤参考点）'
-                stop.anchor_note = '开放街区未返回单一入口，使用高德返回的真实地图点作为通勤参考；不是核实入口，街区内游览距离另计。'
-            else:
-                stop.location, stop.location_status = None, 'unknown'
-                stop.anchor_note = '未返回可核实的区域子地点或入口，请指定具体景点；未以区域中心冒充入口'
-                return
+            stop.location, stop.location_status = None, 'unknown'
+            stop.anchor_note = '未返回可核实的区域子地点或入口，请指定具体景点；未以区域中心冒充入口'
+            return
         else:
             stop.area_name = stop.area_poi_id = ''
             stop.anchor_note = '地图未提供可选子地点或入口，保留原地点；若需区域内游览路线，请指定具体点位'

@@ -13,7 +13,6 @@ class RailMcpClient:
         self.timeout = timeout
         self.process = None
         self.sequence = 0
-        self._call_lock = asyncio.Lock()
 
     async def start(self) -> None:
         if self.process and self.process.returncode is None:
@@ -57,12 +56,6 @@ class RailMcpClient:
         raise RuntimeError('铁路 MCP 未返回有效结果')
 
     async def call(self, name: str, arguments: dict) -> dict:
-        # One stdio reader owns a complete RPC exchange, including initialization.
-        # Independent map calls may run concurrently; this transport cannot.
-        async with self._call_lock:
-            return await self._call(name, arguments)
-
-    async def _call(self, name: str, arguments: dict) -> dict:
         if name not in ('search-stations', 'query-tickets', 'query-ticket-price'):
             raise ValueError('不支持的铁路查询工具')
         try:

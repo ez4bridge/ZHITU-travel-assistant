@@ -30,6 +30,27 @@ def checksum(path):
     return value.hexdigest()
 
 
+def copy_native_runtime(app):
+    native = SOURCE / 'cangjie'
+    required = ('src/validator.cj', 'fixtures.json', 'journey_planner/src/main.cj',
+                'journey_planner/fixtures/cases.json', 'bin/validator.exe',
+                'bin/journey_planner.exe', 'bin/journey_planner.build.json',
+                'bin/SDK-LICENSE', 'bin/Open_Source_Software_Notice.docx')
+    for name in required:
+        if not (native / name).is_file():
+            raise RuntimeError('Native runtime is incomplete: cangjie/' + name)
+    manifest = json.loads((native / 'bin/journey_planner.build.json').read_text(encoding='utf-8-sig'))
+    if (manifest.get('schema_version') != '2.2'
+            or manifest.get('source_sha256') != checksum(native / 'journey_planner/src/main.cj')
+            or manifest.get('executable_sha256') != checksum(native / 'bin/journey_planner.exe')):
+        raise RuntimeError('Native runtime does not match its source manifest.')
+    files = [native / name for name in required] + sorted((native / 'bin').glob('*.dll'))
+    for path in files:
+        target = app / 'cangjie' / path.relative_to(native)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+
+
 def archive_bundle(directory: Path) -> Path:
     directory = directory.resolve()
     public_configuration = (SOURCE / '.env.example').read_bytes()
@@ -99,17 +120,18 @@ def build(output, resources, work, node_directory):
     app.mkdir()
     shutil.copytree(SOURCE / 'backend', app / 'backend', ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
     shutil.copytree(SOURCE / 'third_party', app / 'third_party', ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '.git'))
+    copy_native_runtime(app)
     (app / 'tools').mkdir()
     shutil.copy2(SOURCE / 'tools/rail_mcp_stdio.py', app / 'tools/rail_mcp_stdio.py')
     shutil.copy2(SOURCE / 'tools/portable/manager.py', app / 'portable_manager.py')
     shutil.copy2(SOURCE / '.env.example', output / '.env.example')
     shutil.copy2(SOURCE / '.env.example', output / '.env.local')
     shutil.copy2(SOURCE / 'LICENSE', output / 'LICENSE')
+    shutil.copytree(SOURCE / 'licenses', output / 'licenses')
     (output / 'docs').mkdir()
     shutil.copy2(SOURCE / 'docs/GETTING_STARTED.md', output / 'docs/GETTING_STARTED.md')
     shutil.copytree(SOURCE / 'docs/images', output / 'docs/images')
-    shutil.copytree(resources / 'LICENSES', output / 'licenses/models')
-    shutil.copytree(SOURCE / 'licenses', output / 'licenses', dirs_exist_ok=True)
+    shutil.copytree(resources / 'LICENSES', output / 'licenses/models', dirs_exist_ok=True)
     shutil.copy2(resources / 'SOURCES.json', output / 'docs/STUDY_SOURCES.json')
 
     main_runtime, rail_runtime = output / 'runtime/python', output / 'runtime/rail'

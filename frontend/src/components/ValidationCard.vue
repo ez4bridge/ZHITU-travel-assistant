@@ -23,7 +23,7 @@ const categories = [
     </div>
     <div class="check-overview" :class="{ blocked: report.errors.length, suggested: !report.errors.length && report.warnings.length }" role="status">
       <component :is="hasIssues ? CircleAlert : CircleCheck" :size="21" />
-      <div><strong>{{ report.errors.length ? '行程尚不可执行，请先处理阻断问题' : report.total_cents > report.budget_cents ? '时间与路线检查通过，预算仍需调整' : report.warnings.length ? '部分安排可以进一步优化' : '已知的时间与预算检查通过' }}</strong>
+      <div><strong>{{ report.errors.length ? '行程尚不可执行，请先处理阻断问题' : report.warnings.length ? '部分安排可以进一步优化' : '已知的时间与预算检查通过' }}</strong>
         <p><template v-if="hasIssues || report.unknowns.length">
           <span v-if="report.errors.length">{{ report.errors.length }} 项阻断</span>
           <span v-if="report.warnings.length">{{ report.warnings.length }} 项建议</span>

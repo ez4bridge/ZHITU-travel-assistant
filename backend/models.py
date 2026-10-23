@@ -137,6 +137,65 @@ class StudyStop(StrictModel):
     fact_ids: list[str] = Field(min_length=1, max_length=8)
 
 
+class ConfirmedHotel(StrictModel):
+    booking_id: str = Field(default='', max_length=64, pattern=r'^[a-zA-Z0-9_-]*$')
+    city: str = Field(min_length=1, max_length=40)
+    name: str = Field(min_length=1, max_length=120)
+    address: str = Field(default='', max_length=240)
+    check_in: date
+    check_out: date
+    total_cost: Decimal | None = Field(default=None, ge=0, le=10000000, decimal_places=2)
+
+    @field_validator('city', 'name', 'address')
+    @classmethod
+    def hotel_text(cls, value):
+        return value.strip()
+
+    @model_validator(mode='after')
+    def stay_dates(self):
+        if not self.city or not self.name or not 1 <= (self.check_out - self.check_in).days <= 31:
+            raise ValueError('酒店须填写城市、名称和有效入住／退房日期，最长31晚')
+        return self
+
+
+class BookedTransport(StrictModel):
+    transfer_index: int | None = Field(default=None, ge=0, le=13)
+    from_city: str = Field(min_length=1, max_length=40)
+    to_city: str = Field(min_length=1, max_length=40)
+    mode: Literal['train', 'flight', 'bus', 'driving'] = 'train'
+    departure_date: date
+    departure_time: str
+    arrival_date: date
+    arrival_time: str
+    number: str = Field(default='', max_length=30)
+    departure_place: str = Field(default='', max_length=120)
+    arrival_place: str = Field(default='', max_length=120)
+    total_cost: Decimal | None = Field(default=None, ge=0, le=10000000, decimal_places=2)
+    departure_buffer_min: int | None = Field(default=None, ge=0, le=240)
+    arrival_buffer_min: int | None = Field(default=None, ge=0, le=240)
+
+    @field_validator('departure_time', 'arrival_time')
+    @classmethod
+    def booked_clock(cls, value):
+        datetime.strptime(value, '%H:%M')
+        if len(value) != 5:
+            raise ValueError('时间应为 HH:MM')
+        return value
+
+    @field_validator('from_city', 'to_city', 'number', 'departure_place', 'arrival_place')
+    @classmethod
+    def booked_text(cls, value):
+        return value.strip()
+
+    @model_validator(mode='after')
+    def booked_dates(self):
+        start = datetime.combine(self.departure_date, datetime.strptime(self.departure_time, '%H:%M').time())
+        end = datetime.combine(self.arrival_date, datetime.strptime(self.arrival_time, '%H:%M').time())
+        if not self.from_city or not self.to_city or end <= start:
+            raise ValueError('已订交通须填写城市，到达时间须晚于出发时间')
+        return self
+
+
 class TripRequest(StrictModel):
     origin: str = Field(default='', max_length=80)
     destination: str = Field(default='', max_length=240)
@@ -149,12 +208,15 @@ class TripRequest(StrictModel):
     people: int = Field(default=2, ge=1, le=50)
     mode: Literal['auto', 'walking', 'driving', 'transit', 'bicycling', 'taxi'] = 'auto'
     intercity_mode: Literal['train', 'flight', 'bus', 'driving'] = 'train'
+    intercity_modes: list[Literal['train', 'flight', 'bus', 'driving']] = Field(default_factory=list, min_length=1, max_length=4)
     include_origin_transport: bool = False
     return_to_origin: bool = False
     preferences: str = Field(default='', max_length=2000)
     guides: list[PlanningGuideSource] = Field(default_factory=list, max_length=3)
     compare_modes: bool = True
     confirmed_hotel: str = Field(default='', max_length=120)
+    confirmed_hotels: list[ConfirmedHotel] = Field(default_factory=list, max_length=20)
+    booked_transports: list[BookedTransport] = Field(default_factory=list, max_length=14)
     guide_mode: Literal['prefer', 'inspiration'] = 'prefer'
     study: StudyOptions | None = None
 
@@ -171,8 +233,21 @@ class TripRequest(StrictModel):
     def strip_text(cls, value):
         return value.strip()
 
+    @field_validator('intercity_modes')
+    @classmethod
+    def unique_intercity_modes(cls, value):
+        if len(value) != len(set(value)):
+            raise ValueError('跨城交通偏好不能重复')
+        return value
+
     @model_validator(mode='after')
     def destination_required(self, info: ValidationInfo):
+        # Missing in old SQLite records means use the former single preference.
+        # An explicitly supplied empty list is rejected by the field boundary.
+        if not self.intercity_modes:
+            self.intercity_modes = [self.intercity_mode]
+        else:
+            self.intercity_mode = self.intercity_modes[0]
         if self.destinations:
             names = [stop.city for stop in self.destinations]
             if self.destination and [city_key(c) for c in split_cities(self.destination)] != [city_key(c) for c in names]:
@@ -238,6 +313,9 @@ class Stop(StrictModel):
     name: str = Field(min_length=1, max_length=120)
     city: str = Field(default='', max_length=40)
     kind: Literal['sight', 'meal', 'hotel', 'break'] = 'sight'
+    booking_anchor: Literal['', 'hotel_departure', 'hotel_return', 'transport_departure', 'transport_arrival'] = ''
+    booking_ref: str = Field(default='', max_length=80)
+    booking_address: str = Field(default='', max_length=240)
     start: str
     end: str
     description: str = Field(default='', max_length=1200)
@@ -289,6 +367,8 @@ class Expense(StrictModel):
         description='person会由程序再乘同行人数，quantity不得重复填写人数；group不再乘人数。')
     estimated: Literal[True] = True
     stop_id: str = ''
+    booking_ref: str = Field(default='', max_length=80)
+    commitment: Literal['planned', 'committed', 'paid'] = 'planned'
     note: str = Field(default='模型估算，未查询实时价格', max_length=500)
 
 
@@ -299,6 +379,14 @@ class DayPlan(StrictModel):
     expenses: list[Expense] = Field(default_factory=list, max_length=20)
     accommodation: str = Field(default='', max_length=500)
     meal_note: str = Field(default='', max_length=1000)
+    tips: list[str] = Field(default_factory=list, max_length=8)
+
+    @field_validator('tips')
+    @classmethod
+    def meaningful_daily_tips(cls, value):
+        if any(not tip.strip() or len(tip.strip()) > 500 for tip in value):
+            raise ValueError('每天提醒须为1—500字，最多8条')
+        return [tip.strip() for tip in value]
 
 
 class CityTransfer(StrictModel):
@@ -315,10 +403,11 @@ class CityTransfer(StrictModel):
     note: str = Field(default='交通时间与费用为估算，班次、余票和票价需自行确认', max_length=500)
     rail_option_id: str = Field(default='', max_length=80)
     schedule_status: Literal['estimated', 'queried'] = 'estimated'
-    price_status: Literal['estimated', 'reference'] = 'estimated'
-    train_code: str = Field(default='', max_length=20)
-    departure_station: str = Field(default='', max_length=60)
-    arrival_station: str = Field(default='', max_length=60)
+    price_status: Literal['estimated', 'reference', 'user_reported'] = 'estimated'
+    booking_status: Literal['unconfirmed', 'user_confirmed'] = 'unconfirmed'
+    train_code: str = Field(default='', max_length=30)
+    departure_station: str = Field(default='', max_length=120)
+    arrival_station: str = Field(default='', max_length=120)
     seat_type: str = Field(default='', max_length=30)
     seat_availability: str = Field(default='', max_length=30)
     queried_at: datetime | None = None

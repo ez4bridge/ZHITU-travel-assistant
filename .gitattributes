@@ -1,2 +1,3 @@
-# Preserve the exact upstream bytes recorded in UPSTREAM.json on every platform.
+# Keep release checksums and native source fingerprints stable across platforms.
+* -text
 third_party/mcp-server-12306/** -text

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BedDouble, ChevronRight, Coffee, Landmark, Leaf, MapPin } from 'lucide-vue-next'
+import { BedDouble, ChevronRight, Coffee, Landmark, Leaf, MapPin, Route } from 'lucide-vue-next'
 import StudyStopDetails from './StudyStopDetails.vue'
 import StopFacts from './StopFacts.vue'
 import type { Expense, Stop, StudyContext } from '../types'
@@ -8,17 +8,16 @@ defineProps<{ stop: Stop; index: number; selected: boolean; context?: StudyConte
 const emit = defineEmits<{ select: [id: string] }>()
 const icons = { sight: Landmark, meal: Coffee, hotel: BedDouble, break: Leaf }
 const kinds = { sight: '景点', meal: '餐饮', hotel: '住宿', break: '自由活动' }
-const meals = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' }
 </script>
 
 <template>
   <article :id="stop.id" class="itinerary-stop" :class="{ active: selected }" :aria-labelledby="stop.id + '-name'">
     <button type="button" class="stop-select" :aria-pressed="selected" :aria-label="'在地图上查看' + stop.name" @click="emit('select', stop.id)">
-      <span class="stop-heading-row"><span class="stop-number">{{ String(index + 1).padStart(2, '0') }}</span><span class="stop-time">{{ stop.start }}—{{ stop.end }}</span><span class="stop-kind"><component :is="icons[stop.kind]" :size="13" />{{ stop.kind === 'meal' && stop.meal_period ? meals[stop.meal_period] : kinds[stop.kind] }}</span><ChevronRight :size="15" class="map-select-arrow" /></span>
+      <span class="stop-heading-row"><span class="stop-number">{{ String(index + 1).padStart(2, '0') }}</span><span class="stop-time">{{ stop.start }}—{{ stop.end }}</span><span class="stop-kind"><component :is="stop.booking_anchor?.startsWith('transport_') ? Route : icons[stop.kind]" :size="13" />{{ stop.booking_anchor?.startsWith('transport_') ? '车站／机场接驳' : kinds[stop.kind] }}</span><ChevronRight :size="15" class="map-select-arrow" /></span>
       <h4 :id="stop.id + '-name'"><small v-if="stop.city && !stop.study" class="stop-city">{{ stop.city }} · </small>{{ stop.name }}</h4>
       <span v-if="stop.address" class="stop-location"><MapPin :size="14" /><span>{{ stop.address }}</span></span>
       <span v-else-if="stop.location_status === 'verified' && stop.matched_name && stop.matched_name !== stop.name" class="stop-location"><MapPin :size="14" /><span>{{ stop.matched_name }}</span></span>
-      <span v-if="stop.location_status !== 'verified' && stop.kind !== 'break'" class="stop-unverified">地点待核对</span>
+      <span v-if="stop.location_status !== 'verified' && (stop.kind !== 'break' || stop.booking_anchor?.startsWith('transport_'))" class="stop-unverified">{{ stop.booking_anchor?.startsWith('transport_') ? '站点待核对' : '地点待核对' }}</span>
     </button>
     <div class="stop-content">
       <section v-if="stop.study?.guide || stop.description" class="stop-story"><h5>{{ stop.study ? '历史讲解' : '行程安排' }}</h5><p>{{ stop.study?.guide || stop.description }}</p></section>

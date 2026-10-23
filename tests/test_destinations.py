@@ -55,7 +55,7 @@ def test_five_city_limit_applies_to_both_input_formats():
         TripRequest(start_date='2026-10-21', destination='成都→重庆', destinations=[{'city': '重庆'}, {'city': '成都'}])
 
 
-def test_legacy_six_city_history_readable_but_cannot_be_revised(monkeypatch, tmp_path, offline_domestic_scope):
+def test_legacy_six_city_history_readable_but_cannot_be_revised(monkeypatch, tmp_path, fixture_trip_clock):
     import backend.main as main
     request, itinerary, routes = stay_case(None)
     plan = PlanRecord(id='six-old', created_at=datetime.now(timezone.utc), request=request, itinerary=itinerary,
@@ -123,16 +123,14 @@ def test_structured_preferences_survive_storage_and_recheck(tmp_path):
     assert validate_core(normalized_input(restored.request, restored.itinerary, restored.routes)) == result
 
 
-def test_structured_request_flows_through_api_and_reports_preference(monkeypatch, tmp_path, offline_domestic_scope):
+def test_structured_request_flows_through_api_and_reports_preference(monkeypatch, tmp_path, fixture_trip_clock):
     import backend.main as main
     from backend.amap import Amap
     from backend.validation import Validator
     request, itinerary, _ = stay_case('1')
-    from datetime import timedelta
-    request.start_date = (datetime.now(timezone.utc) + timedelta(days=2)).date()
-    itinerary.days[0].date = request.start_date
-    itinerary.days[0].stops[0].location = (116.4, 39.88)
-    itinerary.days[0].stops[0].location_status = 'verified'
+    # This test isolates stay preference reporting. A 09:00 start assumes the
+    # traveller already ate breakfast, rather than shifting the sight into PM.
+    request.preferences = '早餐自理'
     async def generate(trip, amap, emit, previous=None, instruction='', rail=None, weather=None, weather_by_city=None):
         assert trip.city_route == ['北京']
         assert trip.destinations[0].preferred_days == Decimal('1')

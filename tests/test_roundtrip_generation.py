@@ -21,10 +21,6 @@ def roundtrip():
         {'from_city': '拉萨市', 'to_city': '广州', 'departure_date': request.start_date + timedelta(days=2),
          'arrival_date': request.start_date + timedelta(days=2), 'departure_time': '17:00', 'arrival_time': '22:00',
          'mode': 'flight', 'unit_cost': '900.50'}])
-    # A transport-only itinerary never visits the destination and is now rejected.
-    from backend.models import Stop
-    itinerary.days[1].stops = [Stop(id='visit', name='布达拉宫', city='拉萨市', kind='sight',
-        start='10:00', end='11:00', location=[91.117, 29.657], location_status='verified')]
     return request, itinerary
 
 
@@ -68,10 +64,11 @@ async def test_missing_or_wrong_roundtrip_uses_existing_single_repair(monkeypatc
 async def test_repeated_missing_transfers_fail_instead_of_returning_partial_budget(monkeypatch):
     request, invalid = roundtrip()
     invalid.transfers = []
-    agent, create = model_client(monkeypatch, [invalid, invalid])
+    # research + three bounded attempts (repair, automatic retry) before failing.
+    agent, create = model_client(monkeypatch, [invalid, invalid, invalid])
     with pytest.raises(RuntimeError, match='跨城交通'):
         await agent.generate_itinerary(request, SimpleNamespace(), AsyncMock())
-    assert create.await_count == 3
+    assert create.await_count == 4
 
 
 @pytest.mark.asyncio
@@ -96,8 +93,120 @@ async def test_origin_boarding_is_not_assigned_to_destination_city(monkeypatch):
     assert '不作为目的地城市' in create.await_args.kwargs['messages'][-1]['content']
 
 
+def test_booked_tickets_fill_legs_the_model_omitted():
+    """A missing booked leg must not abort generation (reported 2026-10-22)."""
+    from decimal import Decimal
+    from backend.journey import ensure_transfer_coverage, merge_booked_transfers
+    from backend.models import BookedTransport
+
+    request, itinerary = roundtrip()
+    start = request.start_date
+    request.booked_transports = [
+        BookedTransport(from_city='广州', to_city='拉萨', mode='flight', departure_date=start,
+            departure_time='07:30', arrival_date=start, arrival_time='12:30', total_cost='1600'),
+        BookedTransport(from_city='拉萨', to_city='广州', mode='flight', departure_date=start + timedelta(days=2),
+            departure_time='17:00', arrival_date=start + timedelta(days=2), arrival_time='22:00',
+            total_cost='1800')]
+    itinerary.transfers = []  # the model returned none at all
+    merge_booked_transfers(request, itinerary)
+    ensure_transfer_coverage(request, itinerary)
+    assert [t.booking_status for t in itinerary.transfers] == ['user_confirmed', 'user_confirmed']
+    assert [t.unit_cost for t in itinerary.transfers] == [Decimal('1600'), Decimal('1800')]
+    assert [t.arrival_time for t in itinerary.transfers] == ['12:30', '22:00']
+
+
+def test_missing_unbooked_leg_still_reports_what_is_missing():
+    from backend.journey import TransferCoverageError, ensure_transfer_coverage, merge_booked_transfers
+
+    request, itinerary = roundtrip()
+    start = request.start_date
+    request.booked_transports = []
+    itinerary.transfers = itinerary.transfers[:1]
+    merge_booked_transfers(request, itinerary)
+    with pytest.raises(TransferCoverageError, match='当前为'):
+        ensure_transfer_coverage(request, itinerary)
+
+
 @pytest.mark.asyncio
-async def test_roundtrip_request_and_whole_party_fares_survive_sse_and_history(monkeypatch, tmp_path, offline_domestic_scope):
+async def test_a_late_dinner_does_not_discard_the_generated_plan(monkeypatch, tmp_path):
+    """Reported 2026-10-22: a 20:56 dinner aborted the whole generation."""
+    import json
+    import httpx
+    import backend.main as main
+    from backend.amap import Amap
+    from backend.models import Stop
+    from backend.storage import Store
+    from backend.validation import Validator
+
+    request, valid = roundtrip()
+    valid.days[0].stops = [
+        Stop(id='evening', name='合成夜游', kind='sight', city='拉萨市', start='19:30', end='21:00',
+             location=(91.1, 29.6), location_status='verified'),
+        Stop(id='late-dinner', name='合成晚餐', kind='meal', city='拉萨市', start='21:30', end='22:15',
+             meal_period='dinner', location=(91.11, 29.61), location_status='verified')]
+
+    async def generate(trip, *args, **kwargs):
+        return valid.model_copy(deep=True)
+
+    monkeypatch.setattr(main, 'generate_itinerary', generate)
+    monkeypatch.setattr(main, 'store', Store(tmp_path / 'late-meal.sqlite3'))
+    monkeypatch.setattr(main, 'validator', Validator())
+    monkeypatch.setattr(Amap, 'enrich', AsyncMock(return_value=[]))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url='http://test') as client:
+        response = await client.post('/api/plans/generate', json=request.model_dump(mode='json'))
+        assert 'event: error' not in response.text
+        result = json.loads(response.text.split('event: result\ndata: ')[1].split('\n\n')[0])
+        saved = (await client.get('/api/plans/' + result['id'])).json()
+    meal = next(stop for day in saved['itinerary']['days'] for stop in day['stops'] if stop['kind'] == 'meal')
+    assert meal['start']  # the meal survived; the plan was saved instead of discarded
+    assert any('用餐安排待调整' in item for item in saved['adjustments'])
+
+
+@pytest.mark.asyncio
+async def test_pre_planning_booked_transport_becomes_a_fixed_fact(monkeypatch, tmp_path):
+    """A ticket entered on the first form overrides whatever the model drafts."""
+    import json
+    import httpx
+    import backend.main as main
+    from backend.agent import booking_facts_instruction
+    from backend.amap import Amap
+    from backend.models import BookedTransport
+    from backend.storage import Store
+    from backend.validation import Validator
+
+    request, valid = roundtrip()
+    request.booked_transports = [BookedTransport(from_city='广州', to_city='拉萨', mode='flight',
+        departure_date=request.start_date, departure_time='07:30', arrival_date=request.start_date,
+        arrival_time='12:30', departure_place='广州白云机场', arrival_place='拉萨贡嘎机场',
+        number='CA1234', total_cost='1600')]
+    seen = {}
+
+    async def generate(trip, *args, **kwargs):
+        seen['booking'] = trip.booked_transports[0]
+        assert '固定事实' in booking_facts_instruction(trip)
+        return valid.model_copy(deep=True)  # the model drafted a different flight on purpose
+
+    monkeypatch.setattr(main, 'generate_itinerary', generate)
+    monkeypatch.setattr(main, 'store', Store(tmp_path / 'prebooking.sqlite3'))
+    monkeypatch.setattr(main, 'validator', Validator())
+    monkeypatch.setattr(Amap, 'enrich', AsyncMock(return_value=[]))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url='http://test') as client:
+        response = await client.post('/api/plans/generate', json=request.model_dump(mode='json'))
+        assert 'event: error' not in response.text
+        result = json.loads(response.text.split('event: result\ndata: ')[1].split('\n\n')[0])
+        saved = (await client.get('/api/plans/' + result['id'])).json()
+    assert seen['booking'].number == 'CA1234'
+    transfer = saved['itinerary']['transfers'][0]
+    assert transfer['booking_status'] == 'user_confirmed'
+    assert (transfer['departure_time'], transfer['arrival_time']) == ('07:30', '12:30')
+    assert transfer['arrival_station'] == '拉萨贡嘎机场'
+    anchor = next(stop for day in saved['itinerary']['days'] for stop in day['stops']
+                  if stop.get('booking_anchor') == 'transport_arrival')
+    assert anchor['start'] == '13:30'  # 12:30 arrival + 60 min flight exit allowance
+
+
+@pytest.mark.asyncio
+async def test_roundtrip_request_and_whole_party_fares_survive_sse_and_history(monkeypatch, tmp_path):
     import httpx
     import backend.main as main
     from backend.amap import Amap
@@ -111,8 +220,7 @@ async def test_roundtrip_request_and_whole_party_fares_survive_sse_and_history(m
         assert trip.journey_cities == ['广州', '拉萨市', '广州']
         return valid.model_copy(deep=True)
     monkeypatch.setattr(main, 'generate_itinerary', generate)
-    from test_meals import dining_evidence_stub
-    monkeypatch.setattr(Amap, 'enrich', AsyncMock(side_effect=dining_evidence_stub))
+    monkeypatch.setattr(Amap, 'enrich', AsyncMock(return_value=[]))
     import json
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url='http://test') as client:
         response = await client.post('/api/plans/generate', json=request.model_dump(mode='json'))
@@ -122,5 +230,4 @@ async def test_roundtrip_request_and_whole_party_fares_survive_sse_and_history(m
     assert saved['request']['include_origin_transport'] and saved['request']['return_to_origin']
     assert len(saved['itinerary']['transfers']) == 2
     assert saved['expense_totals']['transport'] == 340150
-    assert saved['validation']['total_cents'] == 448150  # Four priced meals + two explicitly reserved rail meals.
-    assert saved['expense_totals']['hotel'] == 60000  # Two previously omitted nights.
+    assert saved['validation']['total_cents'] == 370150

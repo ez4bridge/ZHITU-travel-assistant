@@ -29,9 +29,9 @@ function search(index: number, value: string) {
       const items = await api<CitySuggestion[]>(`/api/cities?query=${encodeURIComponent(query)}`)
       if (id !== requestId) return
       suggestions.value = items
-      suggestionNote.value = items.length ? '' : '没有匹配建议，请输入国内城市或区县全称，提交时会核验。'
+      suggestionNote.value = items.length ? '' : '没有匹配建议，可直接输入目的地城市。'
     } catch {
-      if (id === requestId) suggestionNote.value = '城市建议暂不可用，可填写国内城市全称，提交时仍需核验。'
+      if (id === requestId) suggestionNote.value = '城市建议暂不可用，可直接输入城市。'
     }
   }, 350)
 }
@@ -73,7 +73,7 @@ onBeforeUnmount(closeSuggestions)
 <template>
   <div class="destination-editor" @focusout="onFocusOut">
     <div class="destination-heading"><span>目的地城市 <b>*</b></span><small>{{ modelValue.length }} / 5</small></div>
-    <p class="destination-help">仅支持中国境内的城市或区县，按游玩顺序添加并选择天数。</p>
+    <p class="destination-help">按游玩顺序添加，每个城市分别选择游玩天数。</p>
     <div v-for="(row, index) in modelValue" :key="index" class="destination-row">
       <div class="destination-row-title"><span>第 {{ index + 1 }} 站</span><div class="destination-actions">
         <button type="button" :disabled="disabled || index === 0" :aria-label="`上移第${index + 1}站`" @click="move(index, -1)"><ArrowUp :size="14" /></button>

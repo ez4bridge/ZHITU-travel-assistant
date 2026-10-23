@@ -47,15 +47,21 @@ def repair_schedule(itinerary: Itinerary, routes: list[RouteLeg], start_time: st
 def recost_transport(itinerary: Itinerary, routes: list[RouteLeg], day_index: int) -> None:
     """Budget the upper reference per leg; separate per-person and vehicle costs."""
     day = itinerary.days[day_index]
-    day.expenses = [e for e in day.expenses if e.category != 'transport']
+    # A route refresh can replace an unspent estimate, never a payment or an
+    # existing booking. New route estimates are separate reserves; no refund or
+    # offset is inferred from a route changing or disappearing.
+    day.expenses = [e for e in day.expenses if e.category != 'transport'
+                    or e.commitment != 'planned' or e.booking_ref]
     fares = [r.fare_yuan for r in routes if r.day_index == day_index and r.available
              and r.fare_yuan is not None and r.mode == 'transit' and r.cost_estimate is None]
     if fares:
         if len(day.expenses) >= 20:
             raise ValueError('当天费用明细已达上限，请先精简费用项目后再切换交通方式')
+        preserved = any(e.category == 'transport' for e in day.expenses)
         day.expenses.append(Expense(label='已查到的公共交通票价', category='transport',
             unit_cost=Decimal(sum(cents(fare) for fare in fares)) / 100, basis='person',
-            note='仅汇总已查到的票价，其他交通费用仍需补齐'))
+            note='仅汇总已查到的票价，其他交通费用仍需补齐' +
+                ('；已付／承诺／预订费用保留另列，未假定退款或抵扣' if preserved else '')))
 
 
 def recost_all(trip, itinerary, routes, only_day=None):
@@ -75,7 +81,10 @@ def recost_all(trip, itinerary, routes, only_day=None):
             if len(day.expenses) >= 20:
                 raise ValueError('当天费用明细已达上限，请精简后重试')
             vehicles = math.ceil(trip.people / 4)
+            preserved = any(e.category == 'transport' and (e.commitment != 'planned' or e.booking_ref)
+                            for e in day.expenses)
             day.expenses.append(Expense(label='交通费用参考上限' if basis == 'person' else f'车辆费用参考上限（{vehicles}辆）',
                 category='transport', unit_cost=Decimal(total) / 100,
                 quantity=1 if basis == 'person' else vehicles, basis='person' if basis == 'person' else 'group',
-                note='逐段参考区间取上限纳入全员预算；车辆按每车最多4人。计算依据见交通选项，不含租车与未返回的额外费用'))
+                note='逐段参考区间取上限纳入全员预算；车辆按每车最多4人。计算依据见交通选项，不含租车与未返回的额外费用' +
+                    ('；已付／承诺／预订费用保留另列，本次路线估算未假定退款或抵扣' if preserved else '')))

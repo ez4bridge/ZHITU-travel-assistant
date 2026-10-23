@@ -31,6 +31,7 @@ class Settings:
         self.amap_qps = float(os.getenv('AMAP_QPS', '2'))
         if not 0 < self.amap_qps <= 100:
             raise ValueError('AMAP_QPS 必须大于 0 且不超过 100')
+        self.validator = os.getenv('VALIDATOR_BACKEND', 'auto')
         self.port = int(os.getenv('PORT', '7862'))
         self.rail_mcp_enabled = os.getenv('RAIL_MCP_ENABLED', 'false').lower() in ('1', 'true', 'yes')
         default_rail_python = ROOT / '.tools' / 'rail-mcp' / '.venv' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')

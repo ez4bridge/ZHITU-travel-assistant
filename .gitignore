@@ -12,3 +12,5 @@ frontend/dist/
 *.pyc
 *.log
 *.tsbuildinfo
+cangjie/.sdk/
+cangjie/bin/*.cjo

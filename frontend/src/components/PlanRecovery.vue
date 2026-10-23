@@ -21,7 +21,7 @@ const recovery = computed(() => planRecovery(props.plan))
       <p><strong>城市、时间或费用安排需要调整</strong><span>这类问题需要调整行程内容，重新查询网络资料不一定能解决。</span></p>
       <button class="secondary-button" :disabled="busy || checking" @click="$emit('revise')"><Sparkles :size="15" />让 AI 调整行程</button>
     </div>
-    <p class="recovery-note">查询地点与路线不调用大模型；AI 调整会调用模型并保存新版本。天气可在天气卡片单独重查。</p>
+    <p class="recovery-note">查询地点与路线不调用大模型；{{ plan.request.study ? '研学调整会调用模型并保存新版本。' : '普通旅行的 AI 调整先展示约束预览，确认后才保存新版本。' }}天气可在天气卡片单独重查。</p>
   </section>
 </template>
 

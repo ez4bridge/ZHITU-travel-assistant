@@ -1,4 +1,5 @@
 import sqlite3
+import json
 from .config import settings
 from .models import PlanRecord
 
@@ -12,8 +13,33 @@ class Store:
     def connect(self):
         return sqlite3.connect(self.path, timeout=10)
 
+    @staticmethod
+    def _protect_confirmed(db, plan_id):
+        if not plan_id or not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='constraint_members'").fetchone():
+            return
+        visited = set()
+        for _ in range(256):
+            if not plan_id:
+                return
+            if plan_id in visited:
+                raise ValueError('历史版本关系循环，不能安全提交修改')
+            visited.add(plan_id)
+            protected = db.execute('''SELECT c.state_revision FROM constraint_members m
+                JOIN constraint_chains c ON c.root_id=m.root_id WHERE m.plan_id=?''', (plan_id,)).fetchone()
+            if protected and protected[0] > 0:
+                raise ValueError('这份行程已有已确认约束或途中事实，请打开最新版本并使用“约束与途中调整”')
+            row = db.execute('SELECT data FROM plans WHERE id=?', (plan_id,)).fetchone()
+            if row is None:
+                return
+            plan_id = json.loads(row[0]).get('parent_id')
+        raise ValueError('历史版本关系超过安全检查上限，不能自动绕过已确认事实')
+
     def save(self, plan):
         with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            # A model request may have started before a constraint preview was
+            # applied in another tab. Recheck in the actual write transaction.
+            self._protect_confirmed(db, plan.parent_id)
             db.execute('INSERT INTO plans VALUES (?, ?, ?)', (plan.id, plan.created_at.isoformat(), plan.model_dump_json()))
 
     def get(self, plan_id):
@@ -25,6 +51,7 @@ class Store:
         # One transaction prevents two browser tabs from overwriting each other.
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
+            self._protect_confirmed(db, plan.id)
             row = db.execute('SELECT data FROM plans WHERE id = ?', (plan.id,)).fetchone()
             if not row or PlanRecord.model_validate_json(row[0], context={'legacy_record': True}).routing_revision != expected_revision:
                 raise ValueError('行程已被其他页面更新，请重新打开后选择交通方式')
@@ -32,6 +59,10 @@ class Store:
 
     def delete(self, plan_id: str):
         with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            # Removing an intermediate confirmed ancestor would let an older
+            # branch lose its path to the facts ledger. Keep that chain intact.
+            self._protect_confirmed(db, plan_id)
             db.execute('DELETE FROM plans WHERE id = ?', (plan_id,))
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='place_guides'").fetchone():
                 db.execute('DELETE FROM place_guides WHERE plan_id = ?', (plan_id,))

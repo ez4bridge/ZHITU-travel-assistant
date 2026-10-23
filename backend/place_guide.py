@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import json
 from itertools import zip_longest
+import ipaddress
 import re
 import sqlite3
 import time
@@ -14,7 +15,7 @@ from openai import AsyncOpenAI
 
 from .config import settings
 from .models import GuideDraft, GuideItem, GuideSource, PlaceGuide
-from .photo_study import SOURCE_DOMAINS, excerpt, web_request
+from .photo_study import excerpt, web_request
 from .qa_usage import UsageCollector
 
 GUIDE_DOMAINS = ('ctrip.com', 'mafengwo.cn')
@@ -37,6 +38,7 @@ tips（实用提醒）：有依据时用1条写团队人数、入口或讲解调
 只有原文明说出行当天闭馆、暂停开放或该地点不对外开放时，才写闭馆提醒并保留适用日期和证据；不从没有信息推断关闭或正常开放。
 常规开放安排与明确适用当日的临时通知冲突时采用临时通知，适用性仍不明确则略过相应规则；继续提供有依据的参观建议。
 只有kind=official的来源才能称官方；其他来源的开放说法要标明媒体或攻略提及，不能当作官方确认。
+公开网页均可作为参考，优先采用与所选地点一致、内容明确且适用日期清楚的来源；不同来源有冲突时，不把未核实说法写成确定事实。
 攻略经验是建议，不保证人少、无须排队或特定展品在场；无法判断是否同一场馆时不采用。
 不生成网址、不声称完成预约、不声称已实时核验。只输出JSON：
 {"overview":[{"text":"有依据的简介与看点","source_id":"S1","evidence":"原文片段"}],"opening":[],"visit":[],"tips":[]}'''
@@ -51,10 +53,21 @@ def source_kind(url: str) -> str | None:
         if not isinstance(url, str):
             return None
         parsed = urlparse(url)
-        host = (parsed.hostname or '').lower()
+        host = (parsed.hostname or '').lower().rstrip('.')
         if (len(url) > 8192 or parsed.scheme not in ('https', 'http') or parsed.username
-                or parsed.password or parsed.port not in (None, 80, 443)):
+                or parsed.password or parsed.port not in (None, 80, 443)
+                or not host or re.search(r'[\x00-\x20\x7f\\]', url)):
             return None
+        try:
+            if not ipaddress.ip_address(host).is_global:
+                return None
+        except ValueError:
+            ascii_host = host.encode('idna').decode('ascii')
+            labels = ascii_host.split('.')
+            if (len(labels) < 2 or not re.fullmatch(r'[a-z]{2,63}|xn--[a-z0-9-]+', labels[-1])
+                    or labels[-1] in ('local', 'localhost', 'internal', 'lan', 'home', 'test', 'invalid', 'example')
+                    or any(not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', label) for label in labels)):
+                return None
         def matches(domains):
             return any(re.fullmatch(r'[a-z0-9]+(?:[.-][a-z0-9]+)*\.[a-z]{2,}', d)
                        and (host == d or host.endswith('.' + d)) for d in domains)
@@ -62,9 +75,8 @@ def source_kind(url: str) -> str | None:
             return 'official'
         if matches(GUIDE_DOMAINS):
             return 'guide'
-        if matches(SOURCE_DOMAINS):
-            return 'public'
-    except ValueError:
+        return 'public'
+    except (ValueError, UnicodeError):
         pass
     return None
 
@@ -97,6 +109,14 @@ def relevant(text: str, stop, city: str = '') -> bool:
             continue
         if len(name) >= 5 or (len(name) >= 2 and len(city_name) >= 2 and city_name in body):
             return True
+    if len(city_name) >= 2 and city_name in body:
+        for alias in aliases:
+            for part in re.split(r'与|及|[、/／|｜]', alias):
+                name = compact(part)
+                if name.startswith(city_name):
+                    name = re.sub(r'^(?:市|区|县)?(?:人民)?', '', name[len(city_name):])
+                if len(name) >= 4 and name in body:
+                    return True
     return False
 
 
@@ -153,7 +173,7 @@ class GuideService:
         names = place_names(stop)
         base = (city + ' ' + (names[0] if names else stop.name))[:70]
         focuses = (PRACTICAL_FOCUS, OVERVIEW_FOCUS)
-        queries = [base + ' 开放时间 购票 预约 参观 讲解 公告 site:gov.cn OR site:library.sh.cn',
+        queries = [base + ' 开放时间 购票 预约 参观 讲解 公告',
                    base + ' 简介 历史 建筑 展陈 特色 推荐看点 lang:zh']
         results = await asyncio.gather(*(web_request(http, calls, 'search',
             {'query': query[:128], 'count': 5, 'need_content': True}, api_key=settings.guide_search_key) for query in queries))
@@ -176,7 +196,7 @@ class GuideService:
             title, text = str(item.get('title') or '')[:180], item.get('content') or ''
             if not isinstance(text, str):
                 text = ''
-            if not text.strip() and fetches < 2:
+            if len(text.strip()) < 80 and fetches < 2:
                 fetches += 1
                 fetched = await web_request(http, calls, 'fetch', {'url': url}, api_key=settings.guide_search_key)
                 text = fetched.get('content') or ''
@@ -205,7 +225,11 @@ class GuideService:
                     sources = await self.sources(http, calls, plan, stop)
                 result.sources = [GuideSource.model_validate({k: v for k, v in s.items() if k != 'text'}) for s in sources]
                 if not sources:
-                    result.message = '未取得与该地点匹配的可用正文，请查看场馆官方渠道；本次未调用模型'
+                    searches = [call for call in calls['web_calls'] if call['kind'] == 'search']
+                    if searches and all(call.get('error') for call in searches):
+                        result.message = '联网搜索未成功，请检查网络或搜索服务配置后重试；本次未调用模型'
+                    else:
+                        result.message = '未取得与该地点匹配的可用正文，请查看场馆官方渠道；本次未调用模型'
                     return result
                 async with AsyncOpenAI(api_key=settings.llm_key, base_url=settings.llm_url, timeout=30, max_retries=0,
                         http_client=httpx.AsyncClient(timeout=30, trust_env=False)) as client:

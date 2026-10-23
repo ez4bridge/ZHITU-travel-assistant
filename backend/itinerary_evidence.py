@@ -41,9 +41,6 @@ def bind_stop_expenses(itinerary, only_day=None):
         stops = {s.id: s for s in day.stops}
         result = []
         for expense in day.expenses:
-            if expense.category == 'food' and expense.note.startswith('在途用餐预算预留：') and not expense.stop_id:
-                result.append(expense)
-                continue  # A rail meal is separate from every restaurant visit.
             expected_kind = categories.get(expense.category)
             existing = stops.get(expense.stop_id)
             if existing and (not expected_kind or existing.kind == expected_kind):

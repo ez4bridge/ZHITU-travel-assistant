@@ -58,8 +58,8 @@ def test_time_overlap_insufficient_transfer_duplicate_and_budget():
     second = itinerary.days[0].stops[1]
     second.start = '09:50'; second.poi_id = 'POI1'
     report = validate_core(normalized_input(request, itinerary, routes))
-    assert {'time_overlap', 'transfer_time'} <= {i['code'] for i in report['errors']}
-    assert {i['code'] for i in report['warnings']} == {'duplicate_stop', 'over_budget'}
+    assert {'over_budget', 'time_overlap', 'transfer_time'} <= {i['code'] for i in report['errors']}
+    assert {i['code'] for i in report['warnings']} == {'duplicate_stop'}
 
 
 def test_route_duration_rounds_up_and_unknown_is_not_passed():
@@ -143,7 +143,7 @@ def test_expense_categories_use_same_decimal_rounding_as_total():
     assert sum(plan.expense_totals.values()) == report.total_cents == 3606
 
 
-def test_api_missing_keys_and_public_map_config_never_exposes_secrets(monkeypatch, offline_domestic_scope):
+def test_api_missing_keys_and_public_map_config_never_exposes_secrets(monkeypatch):
     from backend.main import app
     monkeypatch.setattr(settings, 'llm_key', '')
     monkeypatch.setattr(settings, 'amap_sign_secret', 'private-sign-do-not-send')
@@ -165,7 +165,7 @@ def test_safe_errors_mask_all_credentials(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_two_requests_keep_separate_results(monkeypatch, tmp_path, offline_domestic_scope):
+async def test_two_requests_keep_separate_results(monkeypatch, tmp_path):
     import backend.main as main
     monkeypatch.setattr(main, 'store', Store(tmp_path / 'concurrent.sqlite3'))
     monkeypatch.setattr(main, 'validator', Validator())
@@ -189,7 +189,7 @@ async def test_two_requests_keep_separate_results(monkeypatch, tmp_path, offline
 
 
 @pytest.mark.asyncio
-async def test_stream_disconnect_cancels_inflight_work(monkeypatch, offline_domestic_scope):
+async def test_stream_disconnect_cancels_inflight_work(monkeypatch):
     import backend.main as main
     started, cancelled = asyncio.Event(), asyncio.Event()
     async def slow_generate(*args, **kwargs):
@@ -233,7 +233,7 @@ async def test_malformed_model_json_gets_one_bounded_repair(monkeypatch, repair_
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
     research = SimpleNamespace(choices=[SimpleNamespace(message=ResearchMessage())])
     final = sample()[1].model_dump_json() if repair_succeeds else '{}'
-    complete = AsyncMock(side_effect=[research, response('{bad json'), response(final)])
+    complete = AsyncMock(side_effect=[research, response('{bad json'), response(final), response('{}')])
     class FakeClient:
         chat = SimpleNamespace(completions=SimpleNamespace(create=complete))
         async def __aenter__(self): return self
@@ -248,4 +248,6 @@ async def test_malformed_model_json_gets_one_bounded_repair(monkeypatch, repair_
     else:
         with pytest.raises(RuntimeError, match='有效的行程结构'):
             await agent.generate_itinerary(sample()[0], SimpleNamespace(), emit)
-    assert complete.await_count == 3  # research + invalid JSON + only one repair
+    # research + invalid JSON + repair attempts: one repair succeeds, otherwise
+    # an automatic third attempt is used before giving up.
+    assert complete.await_count == (3 if repair_succeeds else 4)

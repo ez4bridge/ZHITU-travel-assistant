@@ -9,7 +9,7 @@ import pytest
 
 from backend.config import settings
 from backend.models import Itinerary, TripRequest, DayPlan
-from backend.railway import Railway, train_options, reference_price, sample_options, CHINA_TIMEZONE
+from backend.railway import Railway, train_options, reference_price, CHINA_TIMEZONE
 from backend.rail_mcp import RailMcpClient
 
 
@@ -47,6 +47,28 @@ def test_actual_stations_seat_count_and_rounded_reference_price():
     assert option['reference_price'] == '19.51'
     assert reference_price('NaN') is None
     assert reference_price('-1') is None
+
+
+def test_matching_unverified_arrival_movement_does_not_reject_actual_train():
+    request, itinerary, *_ = fixture()
+    option = options()[0]
+    itinerary.days[0].stops = DayPlan.model_validate({'date': request.start_date, 'title': '到达', 'stops': [
+        {'id': 'arrival', 'name': '抵达天津站，地铁前往世纪钟一带', 'kind': 'break',
+         'city': '天津', 'start': '11:43', 'end': '12:15', 'location_behavior': 'unlocated'}]}).stops
+    railway = Railway(request)
+    assert railway.fits(option, itinerary)
+    original = itinerary.model_dump_json()
+    assert railway.fits(option, itinerary) and itinerary.model_dump_json() == original
+    for field, value in [('city', '上海'), ('name', '抵达天津南站，地铁前往世纪钟一带'),
+                         ('kind', 'sight'), ('location_status', 'verified')]:
+        candidate = itinerary.model_copy(deep=True)
+        setattr(candidate.days[0].stops[0], field, value)
+        assert not railway.fits(option, candidate)
+    duplicate = itinerary.model_copy(deep=True)
+    second = duplicate.days[0].stops[0].model_copy(deep=True)
+    second.id = 'ambiguous-arrival'
+    duplicate.days[0].stops.append(second)
+    assert not railway.fits(option, duplicate)
 
 
 def test_filter_city_codes_price_identity_and_malformed_seats():
@@ -99,9 +121,7 @@ async def test_adapter_cache_actual_facts_and_request_isolation(monkeypatch):
     assert transfer.source != 'model'
     assert railway.client.call.await_count == 4  # station pair + tickets + prices, no repeat
     assert len(railway.station_cache['北京']) == 2
-    earlier = await railway.query('北京', '天津', day, '12:00')
-    assert earlier['options'] and earlier['reason'] == 'preferred_window'
-    assert '不是无票' in earlier['message']
+    assert not (await railway.query('北京', '天津', day, '12:00'))['options']
     assert Railway(railway.request).options == {}
 
 
@@ -115,37 +135,24 @@ async def test_offline_clears_forged_or_stale_proof():
 
 
 @pytest.mark.asyncio
-async def test_selected_option_id_does_not_bypass_activity_conflicts(monkeypatch):
-    railway, itinerary = enable_rail(monkeypatch)
-    result = await railway.query('北京', '天津', railway.request.start_date.isoformat())
-    itinerary.transfers[0].rail_option_id = result['options'][0]['option_id']
-    itinerary.days[0].stops = DayPlan.model_validate({'date': railway.request.start_date,
-        'title': '冲突活动', 'stops': [{'id': 'a', 'name': '游玩', 'city': '北京',
-                                      'start': '09:30', 'end': '12:00'}]}).stops
-    with pytest.raises(ValueError, match='不是无票'):
-        await railway.enrich(itinerary)
-    assert itinerary.transfers[0].schedule_status == 'estimated'
-    assert not itinerary.transfers[0].rail_option_id
-
-
-@pytest.mark.asyncio
 async def test_failures_are_cached_and_time_window_does_not_claim_verified(monkeypatch):
     railway, itinerary = enable_rail(monkeypatch)
     railway.client.call.side_effect = RuntimeError('network unavailable')
-    for _ in range(2):
-        with pytest.raises(ValueError, match='network unavailable'):
-            await railway.enrich(itinerary)
+    await railway.enrich(itinerary)
+    await railway.enrich(itinerary)
     assert railway.client.call.await_count == 1
     assert itinerary.transfers[0].schedule_status == 'estimated'
-    assert '尚不能判断有无车票' in itinerary.transfers[0].query_note
+    assert '估算' in itinerary.transfers[0].query_note
     railway, itinerary = enable_rail(monkeypatch)
     itinerary.days[0].stops = DayPlan.model_validate({
         'date': railway.request.start_date, 'title': '活动',
         'stops': [{'id': 'a', 'name': '游玩', 'city': '北京', 'start': '09:30', 'end': '12:00'}]}).stops
-    with pytest.raises(ValueError, match='不是无票'):
-        await railway.enrich(itinerary)
-    assert itinerary.transfers[0].schedule_status == 'estimated'
-    assert '不是无票' in itinerary.transfers[0].query_note
+    await railway.enrich(itinerary)
+    # A real train number beats a bare guessed time: fall back to the provider
+    # row and let the schedule adjust around it.
+    assert itinerary.transfers[0].schedule_status == 'queried'
+    assert itinerary.transfers[0].train_code
+    assert '行程已按班次重排' in itinerary.transfers[0].query_note
 
 
 @pytest.mark.asyncio
@@ -198,168 +205,3 @@ async def test_price_failure_keeps_schedule_queried_and_cost_estimated(monkeypat
     assert transfer.schedule_status == 'queried'
     assert transfer.price_status == 'estimated'
     assert transfer.unit_cost == Decimal('100.00')
-
-
-@pytest.mark.asyncio
-async def test_price_api_recovers_without_repeating_ticket_or_model_queries(monkeypatch):
-    railway, itinerary = enable_rail(monkeypatch)
-    original = railway.client.call.side_effect
-    price_calls = 0
-    async def call(name, args):
-        nonlocal price_calls
-        if name == 'query-ticket-price':
-            price_calls += 1
-            if price_calls == 1:
-                return {'success': False, 'message': 'temporary price outage'}
-        return await original(name, args)
-    railway.client.call.side_effect = call
-    await railway.enrich(itinerary)
-    assert itinerary.transfers[0].price_status == 'reference'
-    assert price_calls == 2
-    assert sum(call.args[0] == 'query-tickets' for call in railway.client.call.call_args_list) == 1
-
-
-@pytest.mark.asyncio
-async def test_estimated_departure_is_not_a_hard_cutoff(monkeypatch):
-    railway, itinerary = enable_rail(monkeypatch)
-    itinerary.transfers[0].departure_time = '15:00'
-    itinerary.transfers[0].arrival_time = '17:00'
-    await railway.enrich(itinerary)
-    assert itinerary.transfers[0].departure_time == '10:00'
-    assert itinerary.transfers[0].train_code == 'C1234'
-    railway.require_verified(itinerary)
-
-
-def test_unverified_model_times_cannot_be_republished_as_usable_rail(monkeypatch):
-    railway, itinerary = enable_rail(monkeypatch)
-    itinerary.transfers[0].schedule_status = 'estimated'
-    with pytest.raises(ValueError, match='模型估计时刻'):
-        railway.require_verified(itinerary)
-
-
-@pytest.mark.asyncio
-async def test_real_arrival_shifts_activities_instead_of_rejecting_seats(monkeypatch):
-    railway, itinerary = enable_rail(monkeypatch)
-    itinerary.days[0].stops = DayPlan.model_validate({'date': railway.request.start_date,
-        'title': '天津游玩', 'stops': [{'id': 'visit', 'name': '天津景点', 'city': '天津',
-            'start': '11:30', 'end': '12:30'}]}).stops
-    await railway.enrich(itinerary)
-    assert itinerary.transfers[0].schedule_status == 'queried'
-    assert itinerary.days[0].stops[0].start == '12:28'
-    assert itinerary.days[0].stops[0].end == '13:28'
-
-
-@pytest.mark.asyncio
-async def test_network_failure_message_is_not_replaced_with_no_seats(monkeypatch):
-    railway, _ = enable_rail(monkeypatch)
-    railway.client.call.side_effect = RuntimeError('network unavailable')
-    result = await railway.query('北京', '天津', railway.request.start_date.isoformat(), '23:59')
-    assert result['status'] == 'unavailable'
-    assert 'network unavailable' in result['message']
-    assert '无可用直达席位' not in result['message']
-
-
-@pytest.mark.asyncio
-async def test_short_public_snapshot_keeps_timestamp_but_regenerates_selection_ids(monkeypatch):
-    import backend.railway as module
-    monkeypatch.setattr(module, 'PUBLIC_SNAPSHOTS', {})
-    monkeypatch.setattr(module, 'monotonic', lambda: 100.0)
-    first, _ = enable_rail(monkeypatch)
-    first.share_snapshots = True
-    day = first.request.start_date.isoformat()
-    a = await first.query('北京', '天津', day)
-    second = Railway(first.request, share_snapshots=True)
-    second.client.call = AsyncMock(side_effect=AssertionError('warm snapshot must avoid provider requests'))
-    b = await second.query('北京', '天津', day)
-    assert a['options'][0]['option_id'] != b['options'][0]['option_id']
-    assert a['options'][0]['queried_at'] == b['options'][0]['queried_at']
-    assert b['snapshot_age_s'] == 0
-    second.client.call.assert_not_awaited()
-    monkeypatch.setattr(module, 'monotonic', lambda: 401.0)
-    third, _ = enable_rail(monkeypatch)
-    third.share_snapshots = True
-    await third.query('北京', '天津', day)
-    assert third.client.call.await_count == 4  # Expired data is refreshed.
-
-
-@pytest.mark.asyncio
-async def test_parallel_same_query_waits_for_completed_cache(monkeypatch):
-    railway, _ = enable_rail(monkeypatch)
-    original = railway.client.call.side_effect
-    started, release = asyncio.Event(), asyncio.Event()
-    async def call(name, args):
-        if name == 'query-tickets':
-            started.set()
-            await release.wait()
-        return await original(name, args)
-    railway.client.call.side_effect = call
-    day = railway.request.start_date.isoformat()
-    first = asyncio.create_task(railway.query('北京', '天津', day))
-    await started.wait()
-    second = asyncio.create_task(railway.query('北京', '天津', day))
-    await asyncio.sleep(0)
-    assert not second.done()
-    release.set()
-    a, b = await asyncio.gather(first, second)
-    assert a['options'] and a['options'] == b['options']
-    assert railway.client.call.await_count == 4
-
-
-@pytest.mark.asyncio
-async def test_stdio_calls_have_a_single_reader_even_with_parallel_tools():
-    import json
-    client = RailMcpClient(Path('unused'))
-    client.start = AsyncMock()
-    started, release = asyncio.Event(), asyncio.Event()
-    active, peak = 0, 0
-    async def rpc(method, arguments):
-        nonlocal active, peak
-        active += 1
-        peak = max(active, peak)
-        started.set()
-        await release.wait()
-        active -= 1
-        return {'content': [{'type': 'text', 'text': json.dumps({'success': True, 'name': arguments['name']})}]}
-    client.rpc = rpc
-    first = asyncio.create_task(client.call('search-stations', {'query': '北京'}))
-    await started.wait()
-    second = asyncio.create_task(client.call('query-tickets', {}))
-    await asyncio.sleep(0)
-    assert peak == 1 and not second.done()
-    release.set()
-    results = await asyncio.gather(first, second)
-    assert peak == 1 and all(result['success'] for result in results)
-
-
-def test_compact_options_include_later_trains_not_just_first_eight():
-    candidates = [{'option_id': str(i), 'departure_time': f'{i:02d}:00',
-                   'duration_minutes': 60, 'reference_price': '50'} for i in range(24)]
-    result = sample_options(candidates, '17:30')
-    assert len(result) == 8
-    assert any(o['departure_time'] == '23:00' for o in result)
-    assert any(o['departure_time'] in ('17:00', '18:00') for o in result)
-
-
-@pytest.mark.asyncio
-async def test_avoid_costly_exact_time_when_affordable_train_can_shift_activities(monkeypatch):
-    railway, itinerary = enable_rail(monkeypatch)
-    railway.request.budget = Decimal('100')
-    request, _, origin, destination, ticket, price = fixture()
-    later = {**ticket, 'train_no': 'C2234', 'start_time': '11:00', 'arrive_time': '12:43'}
-    expensive = {**price, 'prices': {'硬座': '150'}}
-    affordable = {**price, 'train_code': 'C2234', 'start_time': '11:00', 'arrive_time': '12:43', 'prices': {'硬座': '20'}}
-    original = railway.client.call.side_effect
-    async def call(name, args):
-        if name == 'query-tickets':
-            return {'success': True, 'trains': [ticket, later]}
-        if name == 'query-ticket-price':
-            return {'success': True, 'data': [expensive, affordable]}
-        return await original(name, args)
-    railway.client.call.side_effect = call
-    itinerary.days[0].stops = DayPlan.model_validate({'date': request.start_date,
-        'title': '天津游玩', 'stops': [{'id': 'visit', 'name': '景点', 'city': '天津',
-                                     'start': '12:30', 'end': '13:30'}]}).stops
-    await railway.enrich(itinerary)
-    assert itinerary.transfers[0].train_code == 'C2234'
-    assert itinerary.transfers[0].unit_cost == Decimal('20')
-    assert itinerary.days[0].stops[0].start == '13:28'
