@@ -20,7 +20,7 @@ GitHub 仓库的 **Code → Download ZIP** 和发布页中的 **Source code** �
 
 1. **安装。** 双击 `setup.bat`，等待依赖与页面准备完成。行程校验由 Python 执行，无需编译原生程序。
 2. **配置。** 打开根目录的 `.env.local`，填写下方 API 信息并保存。随包密钥均为空，安装程序不会覆盖已有配置。
-3. **恢复研学资源。** 如需使用历史研学，先[下载研学资源包](https://github.com/ez4bridge/ZHITU-travel-assistant/releases/download/v1.0.1/travel-assistant-resources.zip)。解压后，将直接包含 MANIFEST.json、study 和 rag 的资源目录命名为 travel-assistant-resources，与源码文件夹并列放置。停止应用后在源码根目录打开 PowerShell，执行：
+3. **恢复研学资源。** 如需使用历史研学，先[下载研学资源包](https://github.com/ez4bridge/ZHITU-travel-assistant/releases/latest/download/travel-assistant-resources.zip)。解压后，将直接包含 MANIFEST.json、study 和 rag 的资源目录命名为 travel-assistant-resources，与源码文件夹并列放置。停止应用后在源码根目录打开 PowerShell，执行：
 
    ```powershell
    .\.venv\Scripts\python.exe tools\restore_resources.py ..\travel-assistant-resources
